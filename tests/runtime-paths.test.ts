@@ -10,8 +10,26 @@ import {
   cleanupManagedTempFilesOnExitSync,
   cleanupStaleManagedTempFilesSync,
   configureRuntimePaths,
+  removeTrackedManagedTempFilesSync,
   writeManagedTempFile,
+  createManagedTempDirectory,
+  removeManagedTempDirectory,
 } from '../electron/runtimePaths';
+
+test('active artifact directory leases survive stale-file cleanup until explicitly released', async () => {
+  await withSandbox('versora-artifact-lease-', async sandboxDir => {
+    configureRuntimePaths(createMockApp(sandboxDir), sandboxDir, null);
+    const lease = await createManagedTempDirectory('workbook');
+    const record = path.join(lease, 'rows.bin');
+    await fsp.writeFile(record, 'canonical');
+    const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    await fsp.utimes(record, old, old);
+    cleanupStaleManagedTempFilesSync(Date.now(), { force: true });
+    assert.equal(await fsp.readFile(record, 'utf8'), 'canonical');
+    await removeManagedTempDirectory(lease);
+    assert.equal(fs.existsSync(lease), false);
+  });
+});
 
 type MockApp = Parameters<typeof configureRuntimePaths>[0];
 
@@ -112,6 +130,27 @@ test('cleanupManagedTempFilesOnExitSync removes tracked and orphaned managed tem
     assert.equal(fs.existsSync(trackedTempPath), false);
     assert.equal(fs.existsSync(orphanTempPath), false);
     assert.equal(fs.existsSync(runtimePaths.tempRootPath), false);
+  });
+});
+
+test('removing selected managed temp files preserves untracked files and other runtime roots', async () => {
+  await withSandbox('svn-diff-temp-selected-', async (sandboxDir) => {
+    configureRuntimePaths(createMockApp(sandboxDir), path.join(sandboxDir, 'first'), null);
+    const previousRootTempPath = await writeManagedTempFile('previous', '.bin', Buffer.from('previous root'));
+    const runtimePaths = configureRuntimePaths(createMockApp(sandboxDir), path.join(sandboxDir, 'second'), null);
+    assert.ok(runtimePaths.tempRootPath);
+    const trackedTempPath = await writeManagedTempFile('selected', '.bin', Buffer.from('selected'));
+    const otherTrackedTempPath = await writeManagedTempFile('other', '.bin', Buffer.from('other'));
+    const untrackedTempPath = path.join(runtimePaths.tempRootPath, 'untracked.bin');
+    await fsp.writeFile(untrackedTempPath, 'untracked');
+
+    removeTrackedManagedTempFilesSync([trackedTempPath, untrackedTempPath, previousRootTempPath]);
+
+    assert.equal(fs.existsSync(trackedTempPath), false);
+    assert.equal(fs.existsSync(otherTrackedTempPath), true);
+    assert.equal(fs.existsSync(untrackedTempPath), true);
+    assert.equal(fs.existsSync(previousRootTempPath), true);
+    cleanupManagedTempFilesOnExitSync();
   });
 });
 

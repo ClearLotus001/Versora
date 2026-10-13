@@ -1,25 +1,13 @@
 import { useEffect, type MutableRefObject } from 'react';
 
-import type {
-  DiffData,
-  LaunchContextPayload,
-  WorkbookCompareMode,
-} from '@/types';
-import { clearTokenCache } from '@/engine/text/tokenizer';
-import { debugLog, hasBytePayload, waitForNextPaint } from '@/hooks/app/helpers';
-import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
-import { getTransportTextDiffLineCount } from '@/utils/diff/compactTextDiffLines';
+import type { LaunchContextPayload } from '@/types';
+import { debugLog } from '@/hooks/app/helpers';
 import type { DiffLoadController, RevisionQueryController } from '@/hooks/app/contracts';
 import { useAppStore } from '@/store/appStore';
 
 interface UseElectronLifecycleEffectsArgs {
-  applyDiffData: (
-    data: DiffData,
-    options?: { seq?: number; loadingAlreadyStarted?: boolean; compareMode?: WorkbookCompareMode },
-  ) => Promise<void>;
   reloadCliDiffData: () => Promise<void>;
   onLaunchedAfterUpdate?: (version: string) => void;
-  workbookCompareModeRef: MutableRefObject<WorkbookCompareMode>;
   loadSeqRef: MutableRefObject<number>;
   revisionQuerySeqRef: MutableRefObject<number>;
   diffLoad: DiffLoadController;
@@ -27,10 +15,8 @@ interface UseElectronLifecycleEffectsArgs {
 }
 
 export default function useElectronLifecycleEffects({
-  applyDiffData,
   reloadCliDiffData,
   onLaunchedAfterUpdate,
-  workbookCompareModeRef,
   loadSeqRef,
   revisionQuerySeqRef,
   diffLoad,
@@ -82,7 +68,6 @@ export default function useElectronLifecycleEffects({
   }, [setIsDevMode]);
 
   useEffect(() => {
-    clearTokenCache();
     let cancelled = false;
     debugLog('electron-lifecycle:bootstrap-effect:start');
 
@@ -139,7 +124,7 @@ export default function useElectronLifecycleEffects({
 
       let seq = 0;
       try {
-        seq = ++loadSeqRef.current;
+        seq = loadSeqRef.current;
         debugLog('electron-lifecycle:get-launch-context:request', { seq });
         const launchContext = await bridge.getLaunchContext();
         debugLog('electron-lifecycle:get-launch-context:resolved', {
@@ -147,7 +132,7 @@ export default function useElectronLifecycleEffects({
           cancelled,
           currentSeq: loadSeqRef.current,
         });
-        if (cancelled || seq !== loadSeqRef.current) return;
+        if (cancelled) return;
 
         applyLaunchContext(launchContext);
 
@@ -156,75 +141,9 @@ export default function useElectronLifecycleEffects({
           return;
         }
 
-        diffLoadActions.setError('');
-        diffLoadActions.setLoading(true);
-        diffLoadActions.setLoaded(false);
-        diffLoadActions.setPhase('loading');
-        await waitForNextPaint();
-        if (cancelled || seq !== loadSeqRef.current) return;
-
-        debugLog('electron-lifecycle:get-diff-data:request', {
-          seq,
-          compareMode: workbookCompareModeRef.current,
-        });
-        recordPerfBridgeEvent('diff-payload:request', {
-          reason: 'launch',
-          transport: 'get-diff-data',
-          seq,
-          compareMode: workbookCompareModeRef.current,
-        });
-        const data = await bridge.getDiffData(workbookCompareModeRef.current);
-        debugLog('electron-lifecycle:get-diff-data:resolved', {
-          seq,
-          cancelled,
-          currentSeq: loadSeqRef.current,
-          fileName: data.fileName ?? '',
-        });
-        recordPerfBridgeEvent('diff-payload:ready', {
-          reason: 'launch',
-          transport: 'get-diff-data',
-          seq,
-          compareMode: workbookCompareModeRef.current,
-          fileName: data.fileName ?? '',
-        });
-
-        if (cancelled || seq !== loadSeqRef.current) return;
-
-        const strictSnapshotDiffLines = Math.max(
-          getTransportTextDiffLineCount(data.analysisSnapshotsByMode?.strict?.textAnalysis),
-          data.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict?.length ?? 0,
-        );
-        const contentSnapshotDiffLines = Math.max(
-          getTransportTextDiffLineCount(data.analysisSnapshotsByMode?.content?.textAnalysis),
-          data.analysisSnapshotsByMode?.content?.workbookAnalysis?.diffLinesByMode.content?.length ?? 0,
-        );
-
-        const hasDiffPayload = Boolean(
-          typeof data.baseContent === 'string'
-          || typeof data.mineContent === 'string'
-          || hasBytePayload(data.baseBytes)
-          || hasBytePayload(data.mineBytes)
-          || strictSnapshotDiffLines > 0
-          || contentSnapshotDiffLines > 0
-        );
-        debugLog('electron-lifecycle:launch-data:evaluated', {
-          seq,
-          hasDiffPayload,
-          baseContentType: typeof data.baseContent,
-          mineContentType: typeof data.mineContent,
-          baseBytes: hasBytePayload(data.baseBytes) ? data.baseBytes.byteLength : 0,
-          mineBytes: hasBytePayload(data.mineBytes) ? data.mineBytes.byteLength : 0,
-          strictSnapshotDiffLines,
-          contentSnapshotDiffLines,
-        });
-        if (hasDiffPayload) {
-          await applyDiffData(data, {
-            seq,
-            loadingAlreadyStarted: true,
-          });
-        } else {
-          applyEmptyLaunchState(seq);
-        }
+        // Startup and subsequent CLI events share the same request queue, so
+        // neither path can consume or replace the other path's comparison.
+        await reloadCliDiffData();
       } catch (error) {
         if (!cancelled && seq === loadSeqRef.current) {
           debugLog('electron-lifecycle:load-data:error', {
@@ -254,11 +173,11 @@ export default function useElectronLifecycleEffects({
       debugLog('electron-lifecycle:bootstrap-effect:cleanup');
     };
   }, [
-    applyDiffData,
     diffLoadActions,
     loadSeqRef,
     revisionQuerySeqRef,
     revisionQueryActions,
+    reloadCliDiffData,
     setAppUpdateState,
     setCompareContext,
     setDiffSourceNoticeCode,
@@ -271,7 +190,6 @@ export default function useElectronLifecycleEffects({
     setResetPair,
     setRevisionOptions,
     setUsesNativeWindowControls,
-    workbookCompareModeRef,
   ]);
 
   useEffect(() => {

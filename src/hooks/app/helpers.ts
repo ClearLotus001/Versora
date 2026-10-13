@@ -6,37 +6,9 @@ import type {
   PreparedTextAnalysis,
   SvnRevisionInfo,
   WorkbookCompareMode,
-  WorkbookCompareModePayload,
-  WorkbookDiffRegion,
   WorkbookMetadataPayload,
-  PreparedWorkbookAnalysis,
-  WorkbookMetadataSource,
-  WorkbookSection,
 } from '@/types';
 import type { RevisionOptionsStatus } from '@/hooks/app/types';
-
-const MAX_WORKBOOK_METADATA_SINGLE_BYTES = 12 * 1024 * 1024;
-const MAX_WORKBOOK_METADATA_TOTAL_BYTES = 20 * 1024 * 1024;
-const workbookNavigationRegionVersionCache = new WeakMap<
-  WorkbookDiffRegion[],
-  Map<string, WorkbookDiffRegion[]>
->();
-
-function applyWorkbookSelectionVersionLabel(
-  selection: WorkbookDiffRegion['anchorSelection'],
-  baseVersionLabel: string,
-  mineVersionLabel: string,
-) {
-  if (!selection) return selection;
-  const versionLabel = selection.side === 'base'
-    ? baseVersionLabel
-    : mineVersionLabel;
-  if (selection.versionLabel === versionLabel) return selection;
-  return {
-    ...selection,
-    versionLabel,
-  };
-}
 
 export function waitForNextPaint() {
   return new Promise<void>((resolve) => {
@@ -72,10 +44,6 @@ export function cycleHunkIndex(current: number, total: number, direction: -1 | 1
   return (current + direction + total) % total;
 }
 
-export function hasBytePayload(value: unknown): value is Uint8Array {
-  return Boolean(value && ArrayBuffer.isView(value) && value.byteLength > 0);
-}
-
 function getAnalysisSnapshotForMode(
   data: DiffData | null | undefined,
   compareMode: WorkbookCompareMode,
@@ -90,209 +58,22 @@ export function getPreparedTextAnalysisForMode(
   return getAnalysisSnapshotForMode(data, compareMode)?.textAnalysis ?? null;
 }
 
-function getPreparedWorkbookAnalysisForMode(
-  data: DiffData | null | undefined,
-  compareMode: WorkbookCompareMode,
-): PreparedWorkbookAnalysis | null {
-  return getAnalysisSnapshotForMode(data, compareMode)?.workbookAnalysis ?? null;
-}
-
-export function getPreparedWorkbookSectionsForMode(
-  data: DiffData | null | undefined,
-  compareMode: WorkbookCompareMode,
-): WorkbookSection[] | null {
-  const workbookAnalysis = getPreparedWorkbookAnalysisForMode(data, compareMode);
-  if (!workbookAnalysis?.diffLinesByMode[compareMode]) return null;
-  return workbookAnalysis.sectionsByMode?.[compareMode] ?? null;
-}
-
-export function getPreparedWorkbookNavigationRegionsForMode(
-  data: DiffData | null | undefined,
-  compareMode: WorkbookCompareMode,
-): WorkbookDiffRegion[] | null {
-  const workbookAnalysis = getPreparedWorkbookAnalysisForMode(data, compareMode);
-  if (!workbookAnalysis?.diffLinesByMode[compareMode]) return null;
-  return workbookAnalysis.navigationRegionsByMode?.[compareMode] ?? null;
-}
-
 export function getPreparedDiffLinesForMode(
   data: DiffData | null | undefined,
   compareMode: WorkbookCompareMode,
 ): DiffLine[] | null {
-  return getPreparedTextAnalysisForMode(data, compareMode)?.diffLines
-    ?? getPreparedWorkbookAnalysisForMode(data, compareMode)?.diffLinesByMode[compareMode]
-    ?? null;
+  return getPreparedTextAnalysisForMode(data, compareMode)?.diffLines ?? null;
 }
 
-export function getPreparedWorkbookDeltaForMode(
-  data: DiffData | null | undefined,
-  compareMode: WorkbookCompareMode,
-) {
-  const workbookAnalysis = getPreparedWorkbookAnalysisForMode(data, compareMode);
-  if (!workbookAnalysis?.diffLinesByMode[compareMode]) return null;
-  return workbookAnalysis.workbookDeltaByMode[compareMode] ?? null;
-}
-
-export function applyWorkbookRegionVersionLabels(
-  regions: WorkbookDiffRegion[] | null | undefined,
-  baseVersionLabel: string,
-  mineVersionLabel: string,
-): WorkbookDiffRegion[] {
-  if (!regions || regions.length === 0) return [];
-
-  const cacheKey = `${baseVersionLabel}::${mineVersionLabel}`;
-  let cacheByLabel = workbookNavigationRegionVersionCache.get(regions);
-  if (!cacheByLabel) {
-    cacheByLabel = new Map();
-    workbookNavigationRegionVersionCache.set(regions, cacheByLabel);
-  }
-  const cached = cacheByLabel.get(cacheKey);
-  if (cached) return cached;
-
-  const nextRegions = regions.map((region) => {
-    const nextAnchorSelection = applyWorkbookSelectionVersionLabel(
-      region.anchorSelection,
-      baseVersionLabel,
-      mineVersionLabel,
-    );
-    const nextPatches = region.patches.map((patch) => {
-      const patchWithAnchor = patch as typeof patch & { anchorSelection?: WorkbookDiffRegion['anchorSelection'] };
-      const nextPatchAnchorSelection = applyWorkbookSelectionVersionLabel(
-        patchWithAnchor.anchorSelection ?? null,
-        baseVersionLabel,
-        mineVersionLabel,
-      );
-      if (nextPatchAnchorSelection === patchWithAnchor.anchorSelection) return patch;
-      return {
-        ...patch,
-        anchorSelection: nextPatchAnchorSelection,
-      };
-    });
-    const hasPatchChanges = nextPatches.some((patch, index) => patch !== region.patches[index]);
-    if (nextAnchorSelection === region.anchorSelection && !hasPatchChanges) return region;
-    return {
-      ...region,
-      anchorSelection: nextAnchorSelection,
-      patches: hasPatchChanges ? nextPatches : region.patches,
-    };
-  });
-
-  cacheByLabel.set(cacheKey, nextRegions);
-  return nextRegions;
-}
-
-function updateWorkbookSnapshotMetadata(
-  snapshot: DiffAnalysisSnapshot | null | undefined,
-  baseMetadata: DiffData['baseWorkbookMetadata'],
-  mineMetadata: DiffData['mineWorkbookMetadata'],
-): DiffAnalysisSnapshot | null {
-  if (!snapshot?.workbookAnalysis) return snapshot ?? null;
-
-  return {
-    ...snapshot,
-    workbookAnalysis: {
-      ...snapshot.workbookAnalysis,
-      metadata: {
-        base: baseMetadata ?? null,
-        mine: mineMetadata ?? null,
-      },
-    },
-  };
-}
-
-export function mergeWorkbookCompareModePayload(
-  data: DiffData,
-  payload: WorkbookCompareModePayload,
-): DiffData {
-  const payloadSnapshot = payload.analysisSnapshot ?? null;
-  const nextBaseWorkbookMetadata = payloadSnapshot?.workbookAnalysis?.metadata.base
-    ?? data.baseWorkbookMetadata
-    ?? null;
-  const nextMineWorkbookMetadata = payloadSnapshot?.workbookAnalysis?.metadata.mine
-    ?? data.mineWorkbookMetadata
-    ?? null;
-  const mergedPayloadSnapshot = payloadSnapshot
-    ? updateWorkbookSnapshotMetadata(payloadSnapshot, nextBaseWorkbookMetadata, nextMineWorkbookMetadata)
-    : null;
-  const nextAnalysisSnapshotsByMode = mergedPayloadSnapshot
-    ? {
-        ...(data.analysisSnapshotsByMode ?? {}),
-        [payload.compareMode]: mergedPayloadSnapshot,
-      }
-    : (data.analysisSnapshotsByMode ?? null);
-
+export function mergeWorkbookMetadataPayload(data: DiffData, payload: WorkbookMetadataPayload): DiffData {
   return {
     ...data,
-    analysisSnapshotsByMode: nextAnalysisSnapshotsByMode,
-    baseWorkbookMetadata: nextBaseWorkbookMetadata,
-    mineWorkbookMetadata: nextMineWorkbookMetadata,
-    workbookArtifactDiff: mergedPayloadSnapshot?.workbookAnalysis?.artifactDiff
-      ?? data.workbookArtifactDiff
-      ?? null,
+    baseWorkbookMetadata: payload.base,
+    mineWorkbookMetadata: payload.mine,
     perf: payload.perf
-      ? {
-          ...(data.perf ?? { source: 'local-dev' as const }),
-          ...payload.perf,
-        }
+      ? { ...(data.perf ?? { source: 'local-dev' as const }), ...payload.perf }
       : (data.perf ?? null),
   };
-}
-
-export function mergeWorkbookMetadataPayload(
-  data: DiffData,
-  payload: WorkbookMetadataPayload,
-): DiffData {
-  const baseMetadata = payload.base ?? null;
-  const mineMetadata = payload.mine ?? null;
-  const payloadSnapshot = payload.analysisSnapshot ?? null;
-  const nextAnalysisSnapshotsByMode = (() => {
-    const currentSnapshots = data.analysisSnapshotsByMode ?? null;
-    if (!currentSnapshots && !payloadSnapshot) return currentSnapshots;
-
-    const nextEntries = (Object.entries(currentSnapshots ?? {}) as Array<[WorkbookCompareMode, DiffAnalysisSnapshot | null]>).reduce<NonNullable<DiffData['analysisSnapshotsByMode']>>(
-      (accumulator, [mode, snapshot]) => ({
-        ...accumulator,
-        [mode]: updateWorkbookSnapshotMetadata(snapshot, baseMetadata, mineMetadata),
-      }),
-      {},
-    );
-
-    if (payloadSnapshot) {
-      nextEntries[payloadSnapshot.compareMode] = updateWorkbookSnapshotMetadata(
-        payloadSnapshot,
-        baseMetadata,
-        mineMetadata,
-      );
-    }
-
-    return nextEntries;
-  })();
-
-  return {
-    ...data,
-    analysisSnapshotsByMode: nextAnalysisSnapshotsByMode,
-    baseWorkbookMetadata: baseMetadata,
-    mineWorkbookMetadata: mineMetadata,
-    workbookArtifactDiff: payloadSnapshot?.workbookAnalysis?.artifactDiff
-      ?? data.workbookArtifactDiff
-      ?? null,
-    perf: payload.perf
-      ? {
-          ...(data.perf ?? { source: 'local-dev' as const }),
-          ...payload.perf,
-        }
-      : (data.perf ?? null),
-  };
-}
-
-export function shouldResolveWorkbookMetadata(source: WorkbookMetadataSource) {
-  const baseBytes = hasBytePayload(source.baseBytes) ? source.baseBytes.byteLength : 0;
-  const mineBytes = hasBytePayload(source.mineBytes) ? source.mineBytes.byteLength : 0;
-  if (baseBytes === 0 && mineBytes === 0) return false;
-  if (baseBytes > MAX_WORKBOOK_METADATA_SINGLE_BYTES || mineBytes > MAX_WORKBOOK_METADATA_SINGLE_BYTES) {
-    return false;
-  }
-  return (baseBytes + mineBytes) <= MAX_WORKBOOK_METADATA_TOTAL_BYTES;
 }
 
 export function getRevisionOptionsStatus(

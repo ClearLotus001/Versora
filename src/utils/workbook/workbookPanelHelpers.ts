@@ -156,6 +156,7 @@ export function buildWorkbookCompareCellsMaps(
   visibleColumns: number[],
   compareMode: WorkbookCompareMode,
 ): WorkbookCompareCellsMaps {
+  if (rows[0]?.workbookArtifactRow) return { base: new Map(), mine: new Map() };
   let cacheByRows = workbookCompareCellsMapsCache.get(rows);
   if (!cacheByRows) {
     cacheByRows = new Map();

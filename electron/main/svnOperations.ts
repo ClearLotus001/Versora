@@ -1,16 +1,12 @@
-import * as fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import {
-  FILE_EQUALITY_CACHE_LIMIT,
-  FILE_EQUALITY_CHUNK_BYTES,
   REVISION_OPTION_PAGES_CACHE_LIMIT,
 } from './constants.js';
-import { rememberFileEquality, rememberLimitedEntry } from './cache.js';
-import { logMainDebug, logMainWarn } from '../logging.js';
+import { rememberLimitedEntry } from './cache.js';
+import { logMainWarn } from '../logging.js';
 import { logDebugTiming, writeExternalDiffDebugLog } from './logger.js';
 import { runSvnBuffer, runSvnUtf8 } from './rustBridge.js';
 import {
-  buildFileEqualityCacheKey,
   buildRevisionQueryCacheKey,
   createCliRevisionInfo,
   formatSvnDateQuery,
@@ -27,7 +23,6 @@ import {
 } from './svnHelpers.js';
 import {
   cachedRevisionOptionPages,
-  fileEqualityCache,
   getActiveCliArgs,
   getCachedSvnTarget,
   getCachedTimelineTarget,
@@ -39,7 +34,6 @@ import {
   localVersioningStatusCache,
 } from './svnProbeCache.js';
 import type {
-  LocalWorkbookPairCacheContext,
   RevisionOptionsPayload,
   RevisionOptionsQuery,
   LineBlameLine,
@@ -445,7 +439,8 @@ export async function queryRevisionOptionsForTarget(
   const start = performance.now();
   const normalized = normalizeRevisionQuery(query);
   const normalizedTarget = normalizeSvnUrlForCompare(target);
-  const cacheKey = `${normalizedTarget}::${buildRevisionQueryCacheKey(normalized)}`;
+  const peggedTarget = getPeggedSvnTarget(normalizedTarget);
+  const cacheKey = `${peggedTarget}::${buildRevisionQueryCacheKey(normalized)}`;
   const shouldBypassCache = !normalized.beforeRevisionId && !normalized.anchorDateTime;
   const cached = shouldBypassCache ? null : cachedRevisionOptionPages.get(cacheKey);
   if (cached) return cached;
@@ -495,7 +490,7 @@ export async function queryRevisionOptionsForTarget(
   } else if (normalized.anchorDateTime) {
     svnArgs.push('-r', `{${formatSvnDateQuery(normalized.anchorDateTime)}}:1`);
   }
-  svnArgs.push(normalizedTarget);
+  svnArgs.push(peggedTarget);
 
   const result = await runSvnUtf8(svnArgs);
   if (!result.ok) {
@@ -568,173 +563,3 @@ export async function getRevisionOptions(): Promise<SvnRevisionInfo[]> {
 // ---------------------------------------------------------------------------
 // File equality checks
 // ---------------------------------------------------------------------------
-
-async function compareOpenFiles(
-  leftHandle: fs.promises.FileHandle,
-  rightHandle: fs.promises.FileHandle,
-  size: number,
-): Promise<boolean> {
-  const leftChunk = Buffer.allocUnsafe(FILE_EQUALITY_CHUNK_BYTES);
-  const rightChunk = Buffer.allocUnsafe(FILE_EQUALITY_CHUNK_BYTES);
-  let position = 0;
-
-  while (position < size) {
-    const expectedBytes = Math.min(FILE_EQUALITY_CHUNK_BYTES, size - position);
-    const [{ bytesRead: leftBytesRead }, { bytesRead: rightBytesRead }] = await Promise.all([
-      leftHandle.read(leftChunk, 0, expectedBytes, position),
-      rightHandle.read(rightChunk, 0, expectedBytes, position),
-    ]);
-    if (leftBytesRead !== expectedBytes || rightBytesRead !== expectedBytes) {
-      return false;
-    }
-    if (!leftChunk.subarray(0, leftBytesRead).equals(rightChunk.subarray(0, rightBytesRead))) {
-      return false;
-    }
-    position += expectedBytes;
-  }
-
-  return true;
-}
-
-async function compareFileWithBytes(
-  filePath: string,
-  expectedBytes: Uint8Array,
-  fileSize: number,
-): Promise<boolean> {
-  const handle = await fs.promises.open(filePath, 'r');
-  const chunk = Buffer.allocUnsafe(FILE_EQUALITY_CHUNK_BYTES);
-  let position = 0;
-
-  try {
-    while (position < fileSize) {
-      const expectedLength = Math.min(FILE_EQUALITY_CHUNK_BYTES, fileSize - position);
-      const { bytesRead } = await handle.read(chunk, 0, expectedLength, position);
-      if (bytesRead !== expectedLength) {
-        return false;
-      }
-
-      for (let index = 0; index < bytesRead; index += 1) {
-        if (chunk[index] !== expectedBytes[position + index]) {
-          return false;
-        }
-      }
-
-      position += bytesRead;
-    }
-
-    return true;
-  } finally {
-    await handle.close();
-  }
-}
-
-export async function haveSameLocalFileContents(
-  leftPath: string,
-  rightPath: string,
-): Promise<boolean> {
-  if (!leftPath || !rightPath) return false;
-  if (leftPath === rightPath) return true;
-  if (!fs.existsSync(leftPath) || !fs.existsSync(rightPath)) return false;
-
-  try {
-    const [leftStat, rightStat] = await Promise.all([
-      fs.promises.stat(leftPath),
-      fs.promises.stat(rightPath),
-    ]);    
-    if (leftStat.size !== rightStat.size) return false;
-
-    const cacheKey = buildFileEqualityCacheKey(leftPath, rightPath);
-    const cached = fileEqualityCache.get(cacheKey);
-    if (
-      cached
-      && cached.leftPath === leftPath
-      && cached.rightPath === rightPath
-      && cached.leftMtimeMs === leftStat.mtimeMs
-      && cached.rightMtimeMs === rightStat.mtimeMs
-      && cached.leftSize === leftStat.size
-      && cached.rightSize === rightStat.size
-    ) {
-      return cached.equal;
-    }
-
-    const [leftHandle, rightHandle] = await Promise.all([
-      fs.promises.open(leftPath, 'r'),
-      fs.promises.open(rightPath, 'r'),
-    ]);
-    let equal = false;
-    try {
-      equal = await compareOpenFiles(leftHandle, rightHandle, leftStat.size);
-    } finally {
-      await Promise.allSettled([
-        leftHandle.close(),
-        rightHandle.close(),
-      ]);
-    }
-
-    rememberFileEquality(fileEqualityCache, cacheKey, {
-      leftPath,
-      rightPath,
-      leftMtimeMs: leftStat.mtimeMs,
-      rightMtimeMs: rightStat.mtimeMs,
-      leftSize: leftStat.size,
-      rightSize: rightStat.size,
-      equal,
-    }, FILE_EQUALITY_CACHE_LIMIT);
-    return equal;
-  } catch {
-    return false;
-  }
-}
-
-export async function haveSameLocalFileAndBytes(
-  filePath: string,
-  expectedBytes: Uint8Array | null,
-): Promise<boolean> {
-  if (!filePath || !expectedBytes) return false;
-  if (!fs.existsSync(filePath)) return false;
-
-  try {
-    const stat = await fs.promises.stat(filePath);
-    if (stat.size !== expectedBytes.byteLength) {
-      return false;
-    }
-
-    return compareFileWithBytes(filePath, expectedBytes, stat.size);
-  } catch {
-    return false;
-  }
-}
-
-export async function getLocalWorkbookPairCacheContext(
-  leftPath: string,
-  rightPath: string,
-  cacheScope: string,
-): Promise<LocalWorkbookPairCacheContext | null> {
-  if (!leftPath || !rightPath) return null;
-  if (!fs.existsSync(leftPath) || !fs.existsSync(rightPath)) return null;
-
-  try {
-    const [leftStat, rightStat] = await Promise.all([
-      fs.promises.stat(leftPath),
-      fs.promises.stat(rightPath),
-    ]);
-    return {
-      key: `${cacheScope}::${leftPath}::${rightPath}`,
-      leftPath,
-      rightPath,
-      leftMtimeMs: leftStat.mtimeMs,
-      rightMtimeMs: rightStat.mtimeMs,
-      leftSize: leftStat.size,
-      rightSize: rightStat.size,
-    };
-  } catch (error) {
-    logMainDebug(
-      'cache-context',
-      'stat skipped:',
-      leftPath,
-      rightPath,
-      error instanceof Error ? error.message : String(error),
-    );
-    return null;
-  }
-}

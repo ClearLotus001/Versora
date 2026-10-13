@@ -47,6 +47,10 @@
   --color-diff-modify-hl: var(--diff-modify-hl);
   --color-diff-modify-text: var(--diff-modify-text);
   --color-diff-modify-border: var(--diff-modify-border);
+  --color-diff-whitespace-bg: var(--diff-whitespace-bg);
+  --color-diff-whitespace-hl: var(--diff-whitespace-hl);
+  --color-diff-whitespace-text: var(--diff-whitespace-text);
+  --color-diff-whitespace-border: var(--diff-whitespace-border);
 
   /* ── 语法高亮 ── */
   --color-syntax-keyword: var(--syntax-keyword);
@@ -60,6 +64,10 @@
   --color-ln-text: var(--ln-text);
   --color-workbook-header-bg: var(--workbook-header-bg);
   --color-workbook-header-border: var(--workbook-header-border);
+  --color-workbook-canvas-bg: var(--workbook-canvas-bg);
+  --color-workbook-cell-bg: var(--workbook-cell-bg);
+  --color-workbook-empty-bg: var(--workbook-empty-bg);
+  --color-workbook-missing-bg: var(--workbook-missing-bg);
   --color-workbook-grid-border: var(--workbook-grid-border);
   --color-workbook-grid-border-strong: var(--workbook-grid-border-strong);
 
@@ -162,6 +170,12 @@
   --diff-modify-text: #E9C96A;
   --diff-modify-border: #D09A29;
 
+  /* 纯空白差异，与搜索青色区分 */
+  --diff-whitespace-bg: #182440;
+  --diff-whitespace-hl: #283F6A;
+  --diff-whitespace-text: #A9C5FF;
+  --diff-whitespace-border: #7599ED;
+
   /* 语法高亮 */
   --syntax-keyword: #E879F9;
   --syntax-string: #93C5FD;
@@ -174,6 +188,10 @@
   --ln-text: #85858F;
   --workbook-header-bg: #1B2B38;
   --workbook-header-border: #557085;
+  --workbook-canvas-bg: #0D1015;
+  --workbook-cell-bg: #171B22;
+  --workbook-empty-bg: #14181F;
+  --workbook-missing-bg: #202630;
   --workbook-grid-border: #26313D;
   --workbook-grid-border-strong: #3A4856;
 
@@ -258,6 +276,12 @@
   --diff-modify-text: #765300;
   --diff-modify-border: #B47700;
 
+  /* 纯空白差异 */
+  --diff-whitespace-bg: #E9EFFF;
+  --diff-whitespace-hl: #D0DDFA;
+  --diff-whitespace-text: #254782;
+  --diff-whitespace-border: #4B6BB5;
+
   /* 语法高亮 */
   --syntax-keyword: #7C3AED;
   --syntax-string: #2563EB;
@@ -270,6 +294,10 @@
   --ln-text: #71717A;
   --workbook-header-bg: #EDF4FA;
   --workbook-header-border: #9FB3C4;
+  --workbook-canvas-bg: #F1F4F8;
+  --workbook-cell-bg: #FFFFFF;
+  --workbook-empty-bg: #F8FAFC;
+  --workbook-missing-bg: #EEF2F6;
   --workbook-grid-border: #E2E8F0;
   --workbook-grid-border-strong: #CBD5E1;
 
@@ -354,6 +382,12 @@
   --diff-modify-text: #FFFF00;
   --diff-modify-border: #FFFF00;
 
+  /* 纯空白差异 */
+  --diff-whitespace-bg: #09162B;
+  --diff-whitespace-hl: #18385E;
+  --diff-whitespace-text: #9CC4FF;
+  --diff-whitespace-border: #82B4FF;
+
   /* 语法高亮 */
   --syntax-keyword: #FFFFFF;
   --syntax-string: #FFFFFF;
@@ -366,6 +400,10 @@
   --ln-text: #00FFFF;
   --workbook-header-bg: #1A1A1A;
   --workbook-header-border: #7A8791;
+  --workbook-canvas-bg: #000000;
+  --workbook-cell-bg: #1A1A1A;
+  --workbook-empty-bg: #111111;
+  --workbook-missing-bg: #000000;
   --workbook-grid-border: #3F4952;
   --workbook-grid-border-strong: #56616B;
 
@@ -1094,7 +1132,7 @@ textarea::-moz-selection,
 }
 
 .app-window-surface--home .app-toolbar__group,
-.app-window-surface--home .app-toolbar__theme-button {
+.app-window-surface--home .app-toolbar__control-surface:not(.text-accent) {
   background-color: color-mix(in srgb, var(--bg-surface-solid) 64%, transparent);
   border-color: color-mix(in srgb, var(--border-color) 74%, var(--home-chrome-border));
   box-shadow: 0 10px 26px -24px var(--home-chrome-shadow);
@@ -1129,7 +1167,7 @@ textarea::-moz-selection,
 }
 
 .theme-dark .app-window-surface--home .app-toolbar__group,
-.theme-dark .app-window-surface--home .app-toolbar__theme-button {
+.theme-dark .app-window-surface--home .app-toolbar__control-surface:not(.text-accent) {
   background-color: rgba(24, 24, 27, 0.68);
 }
 
@@ -2271,7 +2309,7 @@ textarea::-moz-selection,
 }
 
 .app-toolbar__group,
-.app-toolbar__theme-button,
+.app-toolbar__control-surface:not(.text-accent),
 .app-stats-bar [class*="rounded-full"],
 .motion-toolbar-panel [class*="rounded"],
 .motion-floating-panel [class*="rounded"],
@@ -2853,7 +2891,7 @@ textarea::-moz-selection,
 }
 
 .app-toolbar__button,
-.app-toolbar__theme-button,
+.app-toolbar__control-surface,
 .home-action-card__button,
 .motion-dialog-surface button,
 .motion-floating-panel button {
@@ -2886,8 +2924,16 @@ textarea::-moz-selection,
   transform: scale(0.985);
 }
 
+/* Selected comparison tabs already use the outer tab surface. */
+.comparison-tabs [role="tab"][aria-selected="true"]:is(:hover, :active) {
+  background-color: transparent;
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000);
+}
+
 .theme-light .app-toolbar__group,
-.theme-light .app-toolbar__theme-button,
+.theme-light .app-toolbar__control-surface:not(.text-accent),
 .theme-light .app-toolbar button[aria-haspopup="menu"]:not(.text-accent),
 .theme-light .app-toolbar [role="menu"],
 .theme-light .app-stats-bar [class*="rounded-full"],

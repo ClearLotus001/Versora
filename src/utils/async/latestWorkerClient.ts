@@ -8,10 +8,10 @@ type WorkerResponseResult<TResult> =
   | { ok: true; result: TResult }
   | { ok: false; error: unknown };
 
-interface PendingWorkerRequest<TInput, TResult> {
-  input: TInput;
+interface PendingWorkerRequest<TResult> {
   resolve: (result: TResult) => void;
   reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
 }
 
 export interface LatestWorkerClientOptions<
@@ -24,7 +24,7 @@ export interface LatestWorkerClientOptions<
   buildRequest: (requestId: number, input: TInput) => TRequest;
   parseResponse: (response: TResponse) => WorkerResponseResult<TResult>;
   beforeRequest?: (worker: Worker, input: TInput) => void;
-  computeWithoutWorker?: (input: TInput) => TResult | Promise<TResult>;
+  requestTimeoutMs?: number;
   supersededMessage: string;
   staleMessage: string;
   workerErrorMessage: string;
@@ -55,58 +55,34 @@ export function createLatestWorkerClient<
 ): LatestWorkerClient<TInput, TResult> {
   let worker: Worker | null = null;
   const requestTracker = createLatestRequestTracker();
-  const pending = new Map<number, PendingWorkerRequest<TInput, TResult>>();
+  const pending = new Map<number, PendingWorkerRequest<TResult>>();
+  const configuredTimeout = options.requestTimeoutMs ?? 30_000;
+  const requestTimeoutMs = Number.isFinite(configuredTimeout) ? Math.max(1, configuredTimeout) : 30_000;
 
-  const dispose = () => {
+  const stopWorker = () => {
     if (worker) {
+      worker.onmessage = null;
+      worker.onerror = null;
+      worker.onmessageerror = null;
       worker.terminate();
       worker = null;
     }
     options.onDispose?.();
   };
 
-  const resolveWithFallback = (
-    input: TInput,
-    reason: unknown,
-    resolve: (result: TResult) => void,
-    reject: (error: Error) => void,
-  ) => {
-    if (!options.computeWithoutWorker) {
-      reject(
-        normalizeError(
-          reason,
-          options.workerUnavailableMessage ?? options.workerErrorMessage,
-        ),
-      );
-      return;
-    }
-
-    try {
-      Promise.resolve(options.computeWithoutWorker(input))
-        .then(resolve)
-        .catch((fallbackError) => {
-          reject(
-            fallbackError instanceof Error
-              ? fallbackError
-              : normalizeError(reason, options.workerErrorMessage),
-          );
-        });
-    } catch (fallbackError) {
-      reject(
-        fallbackError instanceof Error
-          ? fallbackError
-          : normalizeError(reason, options.workerErrorMessage),
-      );
-    }
-  };
-
   const failPendingRequests = (error: Error) => {
     const pendingEntries = [...pending.values()];
     pending.clear();
-    dispose();
+    stopWorker();
     pendingEntries.forEach((entry) => {
-      resolveWithFallback(entry.input, error, entry.resolve, entry.reject);
+      clearTimeout(entry.timeout);
+      entry.reject(error);
     });
+  };
+
+  const dispose = () => {
+    requestTracker.begin();
+    failPendingRequests(createAbortError(options.supersededMessage));
   };
 
   const ensureWorker = (): Worker => {
@@ -114,25 +90,37 @@ export function createLatestWorkerClient<
 
     const nextWorker = options.createWorker();
     nextWorker.onmessage = (event: MessageEvent<TResponse>) => {
+      if (worker !== nextWorker) return;
       const response = event.data;
+      if (!response || typeof response.requestId !== 'number') {
+        failPendingRequests(new Error(options.workerMessageErrorMessage));
+        return;
+      }
       const entry = pending.get(response.requestId);
       if (!entry) return;
 
       pending.delete(response.requestId);
+      clearTimeout(entry.timeout);
       if (!requestTracker.isCurrent(response.requestId)) {
         entry.reject(createAbortError(options.staleMessage));
         return;
       }
 
-      const result = options.parseResponse(response);
-      if (result.ok) {
-        entry.resolve(result.result);
-        return;
+      try {
+        const result = options.parseResponse(response);
+        if (result.ok) {
+          entry.resolve(result.result);
+        } else {
+          stopWorker();
+          entry.reject(normalizeError(result.error, options.workerErrorMessage));
+        }
+      } catch (error) {
+        stopWorker();
+        entry.reject(normalizeError(error, options.workerMessageErrorMessage));
       }
-
-      resolveWithFallback(entry.input, result.error, entry.resolve, entry.reject);
     };
     nextWorker.onerror = (event) => {
+      if (worker !== nextWorker) return;
       failPendingRequests(
         normalizeError(
           event.message || options.workerErrorMessage,
@@ -141,6 +129,7 @@ export function createLatestWorkerClient<
       );
     };
     nextWorker.onmessageerror = () => {
+      if (worker !== nextWorker) return;
       failPendingRequests(new Error(options.workerMessageErrorMessage));
     };
 
@@ -150,39 +139,29 @@ export function createLatestWorkerClient<
 
   return {
     compute: (input: TInput): Promise<TResult> => {
+      if (pending.size > 0) dispose();
       if (typeof Worker === 'undefined') {
-        if (!options.computeWithoutWorker) {
-          return Promise.reject(
-            new Error(options.workerUnavailableMessage ?? 'Web Worker is unavailable.'),
-          );
-        }
-
-        try {
-          return Promise.resolve(options.computeWithoutWorker(input));
-        } catch (error) {
-          return Promise.reject(normalizeError(error, options.workerErrorMessage));
-        }
-      }
-
-      if (pending.size > 0) {
-        const abortError = createAbortError(options.supersededMessage);
-        const pendingEntries = [...pending.values()];
-        pending.clear();
-        dispose();
-        pendingEntries.forEach((entry) => entry.reject(abortError));
+        return Promise.reject(
+          new Error(options.workerUnavailableMessage ?? 'Web Worker is unavailable.'),
+        );
       }
 
       return new Promise((resolve, reject) => {
         const requestId = requestTracker.begin();
-        pending.set(requestId, { input, resolve, reject });
+        const timeout = setTimeout(() => {
+          if (!pending.has(requestId)) return;
+          const error = new Error(`${options.workerErrorMessage} Request timed out.`);
+          error.name = 'TimeoutError';
+          failPendingRequests(error);
+        }, requestTimeoutMs);
+        pending.set(requestId, { resolve, reject, timeout });
 
         try {
           const activeWorker = ensureWorker();
           options.beforeRequest?.(activeWorker, input);
           activeWorker.postMessage(options.buildRequest(requestId, input));
         } catch (error) {
-          pending.delete(requestId);
-          resolveWithFallback(input, error, resolve, reject);
+          failPendingRequests(normalizeError(error, options.workerErrorMessage));
         }
       });
     },
@@ -191,7 +170,7 @@ export function createLatestWorkerClient<
       try {
         ensureWorker();
       } catch {
-        // Ignore warmup failure; compute will fall back if needed.
+        // A failed warmup is reported by the next compute request.
       }
     },
     dispose,

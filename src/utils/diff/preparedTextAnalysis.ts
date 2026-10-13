@@ -9,6 +9,7 @@ import type {
 import { alignTextChangeBlock } from '@/engine/text/textChangeAlignment';
 
 const preparedAnalysisCache = new WeakMap<DiffLine[], PreparedTextAnalysis>();
+const reboundAnalysisCache = new WeakMap<PreparedTextAnalysis, WeakMap<DiffLine[], PreparedTextAnalysis>>();
 const splitRowsDescriptorCache = new WeakMap<
   readonly SplitRowDescriptor[],
   WeakMap<DiffLine[], SplitRow[]>
@@ -96,6 +97,43 @@ export function prepareTextDiffAnalysisFromDiffLines(diffLines: DiffLine[]): Pre
     perf: null,
   } satisfies PreparedTextAnalysis;
   preparedAnalysisCache.set(diffLines, next);
+  return next;
+}
+
+export function resolvePreparedTextAnalysisForDiffLines(
+  analysis: PreparedTextAnalysis,
+  diffLines: DiffLine[],
+): PreparedTextAnalysis {
+  if (analysis.diffLines.length > 0 && analysis.splitRowDescriptors.length === 0) {
+    return prepareTextDiffAnalysisFromDiffLines(diffLines);
+  }
+  if (analysis.diffLines === diffLines) return analysis;
+
+  let byDiffLines = reboundAnalysisCache.get(analysis);
+  if (!byDiffLines) {
+    byDiffLines = new WeakMap<DiffLine[], PreparedTextAnalysis>();
+    reboundAnalysisCache.set(analysis, byDiffLines);
+  }
+  const cached = byDiffLines.get(diffLines);
+  if (cached) return cached;
+
+  let canReuseAlignment = analysis.diffLines.length === diffLines.length;
+  for (let index = 0; canReuseAlignment && index < diffLines.length; index += 1) {
+    const source = analysis.diffLines[index]!;
+    const current = diffLines[index]!;
+    canReuseAlignment = source.type === current.type
+      && source.base === current.base
+      && source.mine === current.mine
+      && source.baseLineNo === current.baseLineNo
+      && source.mineLineNo === current.mineLineNo;
+  }
+
+  // Attribution and other line metadata can arrive after the prepared snapshot.
+  // Rebind the lines without repeating alignment, but rebuild if their content changed.
+  const next = canReuseAlignment
+    ? { ...analysis, diffLines }
+    : prepareTextDiffAnalysisFromDiffLines(diffLines);
+  byDiffLines.set(diffLines, next);
   return next;
 }
 

@@ -1,5 +1,4 @@
 import type { DiffLine } from '@/types';
-import { computeDiff } from '@/engine/text/diff';
 import { createLatestWorkerClient } from '@/utils/async/latestWorkerClient';
 
 interface TextDiffWorkerRequest {
@@ -47,7 +46,6 @@ const textDiffWorkerClient = createLatestWorkerClient<
       ? { ok: true, result: response.diffLines }
       : { ok: false, error: response.error }
   ),
-  computeWithoutWorker: ({ baseText, mineText }) => computeDiff(baseText, mineText),
   supersededMessage: 'Superseded text diff request.',
   staleMessage: 'Discarded stale text diff result.',
   workerErrorMessage: 'Failed to compute text diff in worker.',

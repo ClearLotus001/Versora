@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { zipSync, strToU8 } from 'fflate';
 
 import { computeWorkbookDiff } from '../src/engine/workbook/workbookDiff';
-import { resolveDiffTexts, workbookBytesToText } from '../src/utils/diff/diffSource';
+import { resolveDiffTexts, workbookBytesToText } from './fixtures/workbookSourceOracle';
 import { getWorkbookCellChangeKind, isWorkbookStrictOnlyDifference } from '../src/utils/workbook/workbookCellContract';
 import { parseWorkbookDisplayLine } from '../src/utils/workbook/workbookDisplay';
 import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
@@ -137,7 +137,7 @@ test('resolveDiffTexts reuses workbook text for identical byte payloads', () => 
   assert.match(baseText, /^@@sheet\tFormula/m);
 });
 
-test('js workbook fallback keeps shared-string whitespace-only cells as strict diffs', () => {
+test('independent workbook oracle keeps shared-string whitespace-only cells as strict diffs', () => {
   const baseText = workbookBytesToText(buildSharedStringWorkbook(' '), 'strict-space-base.xlsx');
   const mineText = workbookBytesToText(buildSharedStringWorkbook(null), 'strict-space-mine.xlsx');
   const diffLines = computeWorkbookDiff(baseText, mineText);
@@ -159,7 +159,7 @@ test('js workbook fallback keeps shared-string whitespace-only cells as strict d
   assert.equal(compareCells.get(1)?.mineCell.value, '');
 });
 
-test('js workbook fallback content mode folds whitespace-only cells into equality', () => {
+test('independent workbook oracle content mode folds whitespace-only cells into equality', () => {
   const baseText = workbookBytesToText(buildSharedStringWorkbook(' '), 'content-space-base.xlsx');
   const mineText = workbookBytesToText(buildSharedStringWorkbook(null), 'content-space-mine.xlsx');
   const diffLines = computeWorkbookDiff(baseText, mineText, 'content');

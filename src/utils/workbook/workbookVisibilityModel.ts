@@ -179,6 +179,35 @@ export function buildWorkbookVisibilityModel({
   modifiedSheetNames,
   compareMode,
 }: BuildWorkbookVisibilityModelOptions): WorkbookVisibilityModel {
+  const artifact = sectionRowIndex.artifactProvider;
+  if (artifact) {
+    const filtered = showOnlyDifferences || diffTypeFilter !== 'all';
+    const visibleSheetNames = new Set<string>();
+    const visibleLineIndexesBySheet = new Map<string, Set<number>>();
+    for (const section of sections) {
+      const indexes = new Set<number>();
+      for (const row of sectionRowIndex.get(section.name)?.rows ?? []) {
+        const type = resolveWorkbookRowDiffType(row.workbookRowDelta!);
+        if (type && (diffTypeFilter === 'all' || type === diffTypeFilter)) indexes.add(row.lineIdx);
+      }
+      const structuralType = section.changeType === 'rename' ? 'modify' : section.changeType;
+      if (!filtered || indexes.size || (structuralType !== 'equal' && (diffTypeFilter === 'all' || diffTypeFilter === structuralType))) visibleSheetNames.add(section.name);
+      visibleLineIndexesBySheet.set(section.name, indexes);
+    }
+    return { policy: { mode: filtered ? 'differences-only' : 'full', maskIrrelevantCells: filtered, diffTypeFilter },
+      modifiedSheetNames, visibleSheetNames, visibleLineIndexesBySheet,
+      searchableCellKeys: { size: artifact.descriptor.stats.changedCells,
+        has(key: string) {
+          const [sheetName, side, physicalRow, column] = key.split('\u0000');
+          if (side !== 'base' && side !== 'mine') return false;
+          const sheet = artifact.descriptor.sheets.find((item) => item.name === sheetName);
+          if (!sheet) return false;
+          const rowIndex = artifact.findPhysicalRowIndex(sheet.id, side, Number(physicalRow));
+          if (rowIndex == null || !visibleLineIndexesBySheet.get(sheet.name)?.has(rowIndex)) return false;
+          const run = artifact.findRun(rowIndex, Number(column));
+          return run >= 0 && artifact.runHasSide(run, side);
+        } } };
+  }
   const hasActiveDifferenceFilter = showOnlyDifferences || diffTypeFilter !== 'all';
   const cacheEntry = getVisibilityCacheEntry(
     sections,

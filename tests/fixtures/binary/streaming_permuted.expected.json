@@ -1,0 +1,15 @@
+{
+  "kind": "versora-binary-stress-source-v1",
+  "format": "xlsb",
+  "rows": 11,
+  "columns": 13,
+  "sheetNames": [
+    "Sheet1"
+  ],
+  "sharedStrings": 141,
+  "stringLength": 128,
+  "sstPermutation": {
+    "multiplier": 76,
+    "offset": 107
+  }
+}

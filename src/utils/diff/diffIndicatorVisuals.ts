@@ -74,14 +74,14 @@ export function resolveDiffIndicatorThemeVisual(
   if (tone === 'strict-only') {
     return variant === 'strong'
       ? {
-          background: `${theme.searchHl}16`,
-          border: `${theme.searchHl}66`,
-          textColor: theme.searchHl,
+          background: theme.whitespaceBg,
+          border: theme.whitespaceBrd,
+          textColor: theme.whitespaceTx,
         }
       : {
-          background: `${theme.searchHl}14`,
-          border: `${theme.searchHl}33`,
-          textColor: theme.searchHl,
+          background: `${theme.whitespaceBrd}14`,
+          border: `${theme.whitespaceBrd}66`,
+          textColor: theme.whitespaceTx,
         };
   }
 

@@ -4,7 +4,7 @@ mod model;
 mod profile;
 mod workbook;
 
-use std::io;
+use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
 use cli::{parse_args, OutputMode};
@@ -26,7 +26,10 @@ fn main() {
     let compare_mode = parsed_args.compare_mode;
 
     match output_mode {
-        OutputMode::DiffJson | OutputMode::DiffJsonBoth | OutputMode::DiffJsonStream => {
+        OutputMode::DiffJson
+        | OutputMode::DiffJsonBoth
+        | OutputMode::DiffJsonStream
+        | OutputMode::PrepareArtifact => {
             let mut parts = file_path.splitn(2, '\n');
             let base_file_path = parts.next().unwrap_or_default();
             let mine_file_path = parts.next().unwrap_or_default();
@@ -48,6 +51,16 @@ fn main() {
     }
 
     let result = match output_mode {
+        OutputMode::PrepareArtifact => {
+            let mut parts = file_path.splitn(2, '\n');
+            let base_path = parts.next().unwrap_or_default();
+            let mine_path = parts.next().unwrap_or_default();
+            workbook::prepare_workbook_artifact(
+                base_path,
+                mine_path,
+                parsed_args.artifact_dir.as_deref().unwrap_or_default(),
+            )
+        }
         OutputMode::Text => write_workbook_text(&file_path),
         OutputMode::MetadataJson => write_workbook_metadata_json(&file_path),
         OutputMode::DiffJson => {
@@ -57,9 +70,10 @@ fn main() {
             match compute_workbook_diff_output(base_file_path, mine_file_path, &compare_mode) {
                 Ok(diff_output) => {
                     let stdout = io::stdout();
-                    let mut handle = stdout.lock();
+                    let mut handle = BufWriter::with_capacity(64 * 1024, stdout.lock());
                     serde_json::to_writer(&mut handle, &diff_output)
                         .map_err(|error| io::Error::other(error.to_string()))
+                        .and_then(|_| handle.flush())
                 }
                 Err(error) => Err(error),
             }
@@ -71,9 +85,10 @@ fn main() {
             match compute_workbook_diff_outputs(base_file_path, mine_file_path) {
                 Ok(diff_output) => {
                     let stdout = io::stdout();
-                    let mut handle = stdout.lock();
+                    let mut handle = BufWriter::with_capacity(64 * 1024, stdout.lock());
                     serde_json::to_writer(&mut handle, &diff_output)
                         .map_err(|error| io::Error::other(error.to_string()))
+                        .and_then(|_| handle.flush())
                 }
                 Err(error) => Err(error),
             }
@@ -83,7 +98,7 @@ fn main() {
             let base_file_path = parts.next().unwrap_or_default();
             let mine_file_path = parts.next().unwrap_or_default();
             let stdout = io::stdout();
-            let mut handle = stdout.lock();
+            let mut handle = BufWriter::with_capacity(64 * 1024, stdout.lock());
             write_workbook_diff_outputs_stream(
                 base_file_path,
                 mine_file_path,

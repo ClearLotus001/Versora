@@ -42,3 +42,45 @@ test('character diff keeps a single whitespace character visible', () => {
     mineSpans: [],
   });
 });
+
+test('character diff bounds unrelated long replacements while preserving shared edges', () => {
+  const base = `header:${'a'.repeat(1_800)}:footer`;
+  const mine = `header:${'b'.repeat(1_800)}:footer`;
+  const result = computeCharDiff(base, mine);
+  assert.deepEqual(result, {
+    baseSpans: [
+      { highlight: false, text: 'header:' },
+      { highlight: true, text: 'a'.repeat(1_800) },
+      { highlight: false, text: ':footer' },
+    ],
+    mineSpans: [
+      { highlight: false, text: 'header:' },
+      { highlight: true, text: 'b'.repeat(1_800) },
+      { highlight: false, text: ':footer' },
+    ],
+  });
+});
+
+test('exhausted character work budget falls back without losing either input', () => {
+  const result = computeCharDiff('prefix-abcd-suffix', 'prefix-acbd-suffix', { maxWork: 0 });
+  assert.ok(result);
+  assert.equal(result.baseSpans.map(span => span.text).join(''), 'prefix-abcd-suffix');
+  assert.equal(result.mineSpans.map(span => span.text).join(''), 'prefix-acbd-suffix');
+  assert.ok(result.baseSpans.some(span => span.highlight));
+  assert.ok(result.mineSpans.some(span => span.highlight));
+});
+
+test('bounded character diff reconstructs both sides of short edits', () => {
+  const values = ['', ' ', 'ab', 'ba', 'abc', 'axc', 'abab', 'baba', 'abcde', 'aedcb'];
+  for (const base of values) {
+    for (const mine of values) {
+      const result = computeCharDiff(base, mine);
+      if (!result) {
+        assert.ok(base === mine || (base.length <= 1 && mine.length <= 1));
+        continue;
+      }
+      assert.equal(result.baseSpans.map(span => span.text).join(''), base);
+      assert.equal(result.mineSpans.map(span => span.text).join(''), mine);
+    }
+  }
+});

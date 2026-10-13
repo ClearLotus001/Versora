@@ -128,7 +128,7 @@ function applyWorkbookMiniMapPaint(
       }
       if (resolvedTones.includes('strict-only')) {
         const strictStripeLeft = left + Math.floor((width - accentStripeWidth) / 2);
-        ctx.fillStyle = theme.searchHl;
+        ctx.fillStyle = theme.whitespaceBrd;
         ctx.fillRect(strictStripeLeft, top, accentStripeWidth, height);
       }
       return ctx.fillStyle;
@@ -583,7 +583,7 @@ const WorkbookMiniMap = memo(({
       style={{
         width: WIDTH,
         minWidth: WIDTH,
-        background: T.bg0,
+        background: T.workbookCanvasBg,
         borderLeft: `1px solid ${T.border}`,
       }}>
       <canvas

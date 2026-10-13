@@ -25,7 +25,6 @@ export const SPECIAL_MINE_ID = '__mine_input__';
 export const REMOTE_HEAD_ID = '__remote_head__';
 export const TRAILING_PAREN_VERSION = /\(([^)]+)\)\s*$/;
 export const KEYWORD_VERSION = /\b(?:r|rev|revision|ver|version|v)\s*[:#-]?\s*([0-9][\w.-]*)\b/i;
-export const RUST_MAX_BUFFER = 256 * 1024 * 1024;
 const configuredRustCommandTimeoutMs = Number(process.env.SVN_DIFF_RUST_TIMEOUT_MS ?? 120_000);
 export const RUST_COMMAND_TIMEOUT_MS = Number.isFinite(configuredRustCommandTimeoutMs)
   ? Math.max(1_000, configuredRustCommandTimeoutMs)
@@ -48,15 +47,8 @@ export const FILE_PAYLOAD_CACHE_LIMIT = 12;
 export const REVISION_PAYLOAD_CACHE_LIMIT = 24;
 export const FILE_PAYLOAD_CACHE_MAX_BYTES = 64 * 1024 * 1024;
 export const REVISION_PAYLOAD_CACHE_MAX_BYTES = 128 * 1024 * 1024;
-export const WORKBOOK_COMPARE_CACHE_LIMIT = 8;
-export const WORKBOOK_COMPARE_CACHE_MAX_BYTES = 96 * 1024 * 1024;
-export const WORKBOOK_COMPARE_CACHE_COMPRESS_MIN_BYTES = 8 * 1024 * 1024;
-export const WORKBOOK_METADATA_CACHE_LIMIT = 16;
-export const WORKBOOK_METADATA_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 export const DEV_PROFILE_ROOT = process.env.ELECTRON_DEV_PROFILE_DIR?.trim() || '';
 export const AUTO_EXIT_AFTER_LOAD_MS = Number(process.env.SVN_DIFF_AUTO_EXIT_AFTER_LOAD_MS ?? '0');
-export const FILE_EQUALITY_CACHE_LIMIT = 24;
-export const FILE_EQUALITY_CHUNK_BYTES = 1024 * 1024;
 export const DEFAULT_REVISION_QUERY_LIMIT = 50;
 export const MAX_REVISION_QUERY_LIMIT = 100;
 export const USE_NATIVE_WINDOW_CONTROLS = process.env.SVN_DIFF_NATIVE_WINDOW_CONTROLS === '1';

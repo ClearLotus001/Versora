@@ -66,7 +66,8 @@ export function getWorkbookCanvasCellTextDiff(
 
   const baseDiffText = compareCell.baseCell.value === '' ? '' : baseText;
   const mineDiffText = compareCell.mineCell.value === '' ? '' : mineText;
-  const computed = computeCharDiff(baseDiffText, mineDiffText)
+  // Painting must finish within a frame even for unrelated long cell values.
+  const computed = computeCharDiff(baseDiffText, mineDiffText, { maxEditDistance: 64, maxWork: 4_096 })
     ?? (!shouldHighlightCharacterDiffText(baseDiffText) && !shouldHighlightCharacterDiffText(mineDiffText)
       ? null
       : buildWholeTextFallback(
@@ -97,8 +98,8 @@ export function resolveWorkbookCanvasTextDiffHighlight(
 ): WorkbookCanvasTextDiffHighlightVisual {
   return compareCell?.strictOnly
     ? {
-        background: `${theme.searchHl}52`,
-        edge: `${theme.searchHl}cc`,
+        background: theme.whitespaceHl,
+        edge: theme.whitespaceBrd,
       }
     : {
         background: theme.chgHl,

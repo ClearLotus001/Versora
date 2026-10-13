@@ -1,3 +1,5 @@
+import type { CompactTextSplitRowDescriptors } from '../../shared/textSplitRowTransport';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Diff and text-processing types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,6 +81,7 @@ export interface TextDiffPresentation {
 export interface PreparedTextAnalysis {
   diffLines: DiffLine[];
   compactDiffLines?: CompactTextDiffLines;
+  compactSplitRowDescriptors?: CompactTextSplitRowDescriptors;
   stats: TextDiffStats;
   replacementPairs: TextReplacementPair[];
   splitRowDescriptors: SplitRowDescriptor[];
@@ -118,6 +121,7 @@ export interface SyntaxPresentation {
 }
 
 export interface SearchMatch {
+  snippet?: string;
   lineIdx: number;
   start: number;
   end: number;
@@ -166,8 +170,6 @@ export interface DiffPerformanceMetrics {
   mainLoadMs?: number;
   baseReadMs?: number;
   mineReadMs?: number;
-  baseParserMs?: number;
-  mineParserMs?: number;
   baseBytes?: number;
   mineBytes?: number;
   textResolveMs?: number;

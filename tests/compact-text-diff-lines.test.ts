@@ -64,8 +64,6 @@ function createCompactOnlyData(diffLines: DiffLine[]): DiffData {
     fileName: 'demo.ts',
     baseContent: null,
     mineContent: null,
-    baseBytes: null,
-    mineBytes: null,
     analysisSnapshotsByMode: {
       strict: {
         compareMode: 'strict',
@@ -77,7 +75,6 @@ function createCompactOnlyData(diffLines: DiffLine[]): DiffData {
           splitRowDescriptors: [],
           perf: { diffMs: 1 },
         },
-        workbookAnalysis: null,
       },
     },
   };

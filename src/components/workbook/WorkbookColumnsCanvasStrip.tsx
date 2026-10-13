@@ -1,3 +1,5 @@
+import { getWorkbookPendingCellPaint } from '@/utils/workbook/workbookArtifactProvider';
+import { useWorkbookArtifactWindow } from '@/hooks/workbook/useWorkbookArtifactWindow';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHorizontalVirtualColumns';
 import { LN_W } from '@/constants/layout';
@@ -32,6 +34,7 @@ import {
 } from '@/utils/workbook/workbookCanvasBorders';
 import {
   getWorkbookCanvasDevicePixelRatio,
+  paintWorkbookCanvasBackdrop,
   syncWorkbookCanvasSurface,
 } from '@/utils/workbook/workbookCanvasSurface';
 import {
@@ -164,14 +167,25 @@ const WorkbookColumnsCanvasStrip = memo(({
   columnLayoutByColumn,
   baseMergedRanges,
   mineMergedRanges,
-  baseRowEntryByRowNumber,
-  mineRowEntryByRowNumber,
-  compareStateByRow,
-  baseCompareCellsByRowNumber,
-  mineCompareCellsByRowNumber,
+  baseRowEntryByRowNumber: initialBaseRowEntryByRowNumber,
+  mineRowEntryByRowNumber: initialMineRowEntryByRowNumber,
+  compareStateByRow: initialCompareStateByRow,
+  baseCompareCellsByRowNumber: initialBaseCompareCellsByRowNumber,
+  mineCompareCellsByRowNumber: initialMineCompareCellsByRowNumber,
   compareMode,
   maskedRegions,
 }: WorkbookColumnsCanvasStripProps) => {
+  const windowData = useWorkbookArtifactWindow({
+    rows: rows.map((item) => item.row), columns: renderColumns.map((entry) => entry.column),
+    baseVersion, mineVersion, baseMerges: baseMergedRanges, mineMerges: mineMergedRanges,
+    fallback: { entries: { base: initialBaseRowEntryByRowNumber, mine: initialMineRowEntryByRowNumber },
+      cells: { base: initialBaseCompareCellsByRowNumber, mine: initialMineCompareCellsByRowNumber }, states: initialCompareStateByRow },
+  });
+  const baseRowEntryByRowNumber = windowData.entries.base;
+  const mineRowEntryByRowNumber = windowData.entries.mine;
+  const baseCompareCellsByRowNumber = windowData.cells.base;
+  const mineCompareCellsByRowNumber = windowData.cells.mine;
+  const compareStateByRow = windowData.states;
   const T = useThemeTokens();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const clearHoverRef = useRef<() => void>(() => {});
@@ -340,7 +354,7 @@ const WorkbookColumnsCanvasStrip = memo(({
       ctx.scale(dpr, dpr);
       if (fullDraw) {
         ctx.clearRect(0, 0, width, canvasHeight);
-        ctx.fillStyle = T.bg0;
+        ctx.fillStyle = T.workbookCanvasBg;
         ctx.fillRect(0, 0, width, canvasHeight);
       }
       const floatingMergedDraws: Array<() => void> = [];
@@ -410,7 +424,7 @@ const WorkbookColumnsCanvasStrip = memo(({
         });
 
         ctx.fillStyle = rowBg;
-        ctx.fillRect(0, y, contentRight, ROW_H);
+        ctx.fillRect(0, y, contentLeft, ROW_H);
         ctx.fillStyle = resolveWorkbookRowGutterBackground({
           theme: T,
           selectionAccent,
@@ -639,7 +653,7 @@ const WorkbookColumnsCanvasStrip = memo(({
           const isHeaderRow = headerRowNumber > 0 && anchorRowNumber === headerRowNumber;
           const anchorEntry = (side === 'base' ? baseRowEntryByRowNumber : mineRowEntryByRowNumber).get(anchorRowNumber) ?? entry;
           const compareCellsByRowNumber = side === 'base' ? baseCompareCellsByRowNumber : mineCompareCellsByRowNumber;
-          const cell = anchorEntry?.cells[anchorColumn] ?? { value: '', formula: '' };
+          const cell = anchorEntry?.cells[anchorColumn] ?? { value: getWorkbookPendingCellPaint(anchorEntry, anchorColumn), formula: '' };
           const compareCell = resolveWorkbookCanvasCompareCell({
             compareCellsByRowNumber,
             rowCompareCells: renderRow.compareCells,
@@ -891,26 +905,21 @@ const WorkbookColumnsCanvasStrip = memo(({
           drawCompact(columnEntry, x);
         });
       };
-      const drawFrozenBackdrops = () => {
-        const frozenViewport = layerViewports.frozen;
-        if (!frozenViewport) return;
+      const drawRowBackdrops = (viewport: { left: number; width: number }) => {
+        if (viewport.width <= 0) return;
         renderRows.forEach((renderRow, rowIndex) => {
           const y = rowIndex * ROW_H;
-          ctx.fillStyle = getRowBg(renderRow);
-          ctx.fillRect(frozenViewport.left, y, frozenViewport.width, ROW_H);
-        });
-      };
-      const drawScrollBackdrops = () => {
-        if (scrollViewport.width <= 0) return;
-        renderRows.forEach((renderRow, rowIndex) => {
-          const y = rowIndex * ROW_H;
-          ctx.fillStyle = getRowBg(renderRow);
-          ctx.fillRect(scrollViewport.left, y, scrollViewport.width, ROW_H);
+          paintWorkbookCanvasBackdrop(
+            ctx,
+            { left: viewport.left, top: y, width: viewport.width, height: ROW_H },
+            T.workbookCanvasBg,
+            getRowBg(renderRow),
+          );
           ctx.strokeStyle = resolveWorkbookRowBorderColor(T, renderRow.rowTone);
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(scrollViewport.left, y + 0.5);
-          ctx.lineTo(scrollViewport.left + scrollViewport.width, y + 0.5);
+          ctx.moveTo(viewport.left, y + 0.5);
+          ctx.lineTo(viewport.left + viewport.width, y + 0.5);
           ctx.stroke();
         });
       };
@@ -921,9 +930,9 @@ const WorkbookColumnsCanvasStrip = memo(({
 
       if (scrollViewport.width > 0) {
         ctx.clearRect(scrollViewport.left, 0, scrollViewport.width, canvasHeight);
-        ctx.fillStyle = T.bg0;
+        ctx.fillStyle = T.workbookCanvasBg;
         ctx.fillRect(scrollViewport.left, 0, scrollViewport.width, canvasHeight);
-        drawScrollBackdrops();
+        drawRowBackdrops(scrollViewport);
         renderRows.forEach((renderRow, rowIndex) => {
           clipWorkbookCanvasToViewport(ctx, scrollViewport, rowIndex * ROW_H, ROW_H, () => {
             drawCellsForLayer(renderRow, rowIndex, floatingEntries, 'floating');
@@ -939,8 +948,8 @@ const WorkbookColumnsCanvasStrip = memo(({
 
       const frozenViewport = layerViewports.frozen;
 
-      if (fullDraw) {
-        drawFrozenBackdrops();
+      if (fullDraw && frozenViewport) {
+        drawRowBackdrops(frozenViewport);
       }
 
       if (fullDraw && frozenViewport) {

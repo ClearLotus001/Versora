@@ -92,24 +92,14 @@ function startChild(command: string, args: string[], label: string, env: NodeJS.
   });
 }
 
-function warnRustFallback(message: string) {
-  console.warn(`[dev-app] ${message}`);
-  console.warn(
-    '[dev-app] Continuing without the Rust workbook parser. ' +
-    'Workbook diff still works through the JS fallback, but large workbook loading will be slower.',
-  );
-  console.warn('[dev-app] Install Rust and run "npm run build:rust" to restore the fast workbook path.');
-}
-
 function ensureRustArtifacts() {
   if (fs.existsSync(rustArtifactPaths.parserPath)) return;
 
-  const requireRust = process.env.SVN_DIFF_REQUIRE_RUST === '1';
   if (process.env.SVN_DIFF_SKIP_RUST_BUILD === '1') {
-    const message = `Rust workbook parser is missing: ${rustArtifactPaths.parserPath}`;
-    if (requireRust) throw new Error(message);
-    warnRustFallback(message);
-    return;
+    throw new Error(
+      `Rust workbook parser is missing: ${rustArtifactPaths.parserPath}. ` +
+      'Run "npm run build:rust" before starting the development app.',
+    );
   }
 
   console.log('[dev-app] Rust workbook parser is missing; building it before Electron starts.');
@@ -119,11 +109,9 @@ function ensureRustArtifacts() {
     return;
   }
 
-  const message = result.ok
+  throw new Error(result.ok
     ? `Rust build completed but parser artifact was not found: ${rustArtifactPaths.parserPath}`
-    : result.message;
-  if (requireRust) throw new Error(message);
-  warnRustFallback(message);
+    : result.message);
 }
 
 function shutdown(exitCode = 0) {

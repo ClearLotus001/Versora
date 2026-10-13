@@ -1,9 +1,9 @@
 import { fileURLToPath, URL } from 'node:url';
 
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, normalizePath, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { restoreStandardBackdropFilter } from './scripts/viteCss';
+import { restoreStandardBackdropFilter } from './scripts/viteCss.mts';
 
 function resolveManualChunk(id: string): string | undefined {
   const normalized = id.replace(/\\/g, '/');
@@ -66,11 +66,14 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    ...(process.platform === 'win32'
-      ? { watch: {
+    watch: {
+      ignored: [normalizePath(fileURLToPath(new URL('./output', import.meta.url))) + '/**'],
+      ...(process.platform === 'win32'
+        ? {
           usePolling: true,
           interval: 150,
-        } }
-      : {}),
+        }
+        : {}),
+    },
   },
 });

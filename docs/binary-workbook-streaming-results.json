@@ -1,0 +1,667 @@
+{
+  "generatedAt": "2026-10-13T14:10:15.282785+00:00",
+  "beforeSha256": "d12a41c3f68cce6afcb6cafb7d3de103189c1fae236b92c6217bdffe6b8feaad",
+  "afterSha256": "0467a6ab0d1ba314d303c3744e47c50b2aca603306c42112c439d1787cc5a593",
+  "beforeReconstructed": false,
+  "measurement": "Windows kernel peak working set; private bytes sampled every20ms; scratch/output bytes sampled every200ms; serial before then after; OS file cache not flushed; one run per implementation/input",
+  "cases": [
+    {
+      "label": "xlsb-repeated",
+      "sourceSha256": "cf25dfad8449dc7fa2cbc35ca2e52d59ac1a6297ca015853742439443d4f197a",
+      "sourceBytes": 364608,
+      "sourceModel": {
+        "kind": "versora-binary-stress-source-v1",
+        "format": "xlsb",
+        "rows": 10000,
+        "columns": 100,
+        "sheetNames": [
+          "Sheet1"
+        ],
+        "sharedStrings": 1,
+        "stringLength": 128,
+        "sstPermutation": {
+          "multiplier": 1,
+          "offset": 0
+        }
+      },
+      "sourceModelSha256": "27f6c1bfc7cd18251aa71c86a14fb116536bc4cff7797b8da2ccbca3d8dbbb56",
+      "identicalManifestSemantics": true,
+      "identicalArtifactFiles": {
+        "base.rows.bin": true,
+        "base.rows.idx": true,
+        "content.pairs.bin": true,
+        "content.regions.bin": true,
+        "content.runs.bin": true,
+        "mine.rows.bin": true,
+        "mine.rows.idx": true,
+        "strict.pairs.bin": true,
+        "strict.regions.bin": true,
+        "strict.runs.bin": true
+      },
+      "sourceOracle": {
+        "checkedCells": 2000000,
+        "rowsPerSide": 10000,
+        "columns": 100,
+        "sheetCount": 1,
+        "sharedStrings": 1,
+        "expectedSource": "D:\\MyProject\\Versora\\.tmp-binary-streaming\\xlsb-repeated.source.json",
+        "elapsedSeconds": 0.9936253998894244,
+        "allCoordinatesValuesFormulasMatch": true
+      },
+      "before": {
+        "elapsedSeconds": 2.1176980999298394,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 18681856,
+          "privateBytes": 10756096
+        },
+        "sampledPeakScratchBytes": 26,
+        "sampledPeakOutputBytes": 281039598,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 281439638
+      },
+      "after": {
+        "elapsedSeconds": 2.2028653000015765,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 18812928,
+          "privateBytes": 10932224
+        },
+        "sampledPeakScratchBytes": 166,
+        "sampledPeakOutputBytes": 281039598,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 281439638
+      }
+    },
+    {
+      "label": "xlsb-100k-sst",
+      "sourceSha256": "6a342b678f0a5c86f072c5b50d56d3e99faa0523a46299de6fc5157576f78d4f",
+      "sourceBytes": 6093672,
+      "sourceModel": {
+        "kind": "versora-binary-stress-source-v1",
+        "format": "xlsb",
+        "rows": 10000,
+        "columns": 100,
+        "sheetNames": [
+          "Sheet1"
+        ],
+        "sharedStrings": 100000,
+        "stringLength": 128,
+        "sstPermutation": {
+          "multiplier": 1,
+          "offset": 0
+        }
+      },
+      "sourceModelSha256": "421a442bbb482783caa85dce68b005ac8b4d4a964be0e579428f8fd0bd7a64ae",
+      "identicalManifestSemantics": true,
+      "identicalArtifactFiles": {
+        "base.rows.bin": true,
+        "base.rows.idx": true,
+        "content.pairs.bin": true,
+        "content.regions.bin": true,
+        "content.runs.bin": true,
+        "mine.rows.bin": true,
+        "mine.rows.idx": true,
+        "strict.pairs.bin": true,
+        "strict.regions.bin": true,
+        "strict.runs.bin": true
+      },
+      "sourceOracle": {
+        "checkedCells": 2000000,
+        "rowsPerSide": 10000,
+        "columns": 100,
+        "sheetCount": 1,
+        "sharedStrings": 100000,
+        "expectedSource": "D:\\MyProject\\Versora\\.tmp-binary-streaming\\xlsb-100k-sst.source.json",
+        "elapsedSeconds": 1.0248302000109106,
+        "allCoordinatesValuesFormulasMatch": true
+      },
+      "before": {
+        "elapsedSeconds": 2.1791495999787003,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 61235200,
+          "privateBytes": 54476800
+        },
+        "sampledPeakScratchBytes": 26,
+        "sampledPeakOutputBytes": 281039598,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 281439638
+      },
+      "after": {
+        "elapsedSeconds": 2.7589188998099416,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 24678400,
+          "privateBytes": 15286272
+        },
+        "sampledPeakScratchBytes": 14000026,
+        "sampledPeakOutputBytes": 283481804,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 281439638
+      }
+    },
+    {
+      "label": "xlsb-unique",
+      "sourceSha256": "18edb01860ef332ccd4ec0fc8102330e7882260107d7848532d1812548930e17",
+      "sourceBytes": 11019260,
+      "sourceModel": {
+        "kind": "versora-binary-stress-source-v1",
+        "format": "xlsb",
+        "rows": 10000,
+        "columns": 100,
+        "sheetNames": [
+          "Sheet1"
+        ],
+        "sharedStrings": 999998,
+        "stringLength": 128,
+        "sstPermutation": {
+          "multiplier": 1,
+          "offset": 0
+        }
+      },
+      "sourceModelSha256": "3ecabd68f0d85fd64fe618b456f0861b7832cbae06a55d143c17938d56fa2b29",
+      "identicalManifestSemantics": true,
+      "identicalArtifactFiles": {
+        "base.rows.bin": true,
+        "base.rows.idx": true,
+        "content.pairs.bin": true,
+        "content.regions.bin": true,
+        "content.runs.bin": true,
+        "mine.rows.bin": true,
+        "mine.rows.idx": true,
+        "strict.pairs.bin": true,
+        "strict.regions.bin": true,
+        "strict.runs.bin": true
+      },
+      "sourceOracle": {
+        "checkedCells": 2000000,
+        "rowsPerSide": 10000,
+        "columns": 100,
+        "sheetCount": 1,
+        "sharedStrings": 999998,
+        "expectedSource": "D:\\MyProject\\Versora\\.tmp-binary-streaming\\xlsb-unique.source.json",
+        "elapsedSeconds": 1.0181501999031752,
+        "allCoordinatesValuesFormulasMatch": true
+      },
+      "before": {
+        "elapsedSeconds": 2.4191139000467956,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 443232256,
+          "privateBytes": 453193728
+        },
+        "sampledPeakScratchBytes": 26,
+        "sampledPeakOutputBytes": 281039598,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 281439638
+      },
+      "after": {
+        "elapsedSeconds": 2.6905859999824315,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 35205120,
+          "privateBytes": 25911296
+        },
+        "sampledPeakScratchBytes": 139999746,
+        "sampledPeakOutputBytes": 388446012,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 281439638
+      }
+    },
+    {
+      "label": "xlsb-permuted",
+      "sourceSha256": "e4f6ed0eca8fa0ad5020fb2d72d55b4c47210b838976f2825c70db77572ec2a9",
+      "sourceBytes": 12532800,
+      "sourceModel": {
+        "kind": "versora-binary-stress-source-v1",
+        "format": "xlsb",
+        "rows": 10000,
+        "columns": 100,
+        "sheetNames": [
+          "Sheet1"
+        ],
+        "sharedStrings": 999998,
+        "stringLength": 128,
+        "sstPermutation": {
+          "multiplier": 441069,
+          "offset": 104729
+        }
+      },
+      "sourceModelSha256": "a03f61e4146a5bd9455cc24a82e03e8fe40d7c470942094f01bdf46937ae784e",
+      "identicalManifestSemantics": true,
+      "identicalArtifactFiles": {
+        "base.rows.bin": true,
+        "base.rows.idx": true,
+        "content.pairs.bin": true,
+        "content.regions.bin": true,
+        "content.runs.bin": true,
+        "mine.rows.bin": true,
+        "mine.rows.idx": true,
+        "strict.pairs.bin": true,
+        "strict.regions.bin": true,
+        "strict.runs.bin": true
+      },
+      "sourceOracle": {
+        "checkedCells": 2000000,
+        "rowsPerSide": 10000,
+        "columns": 100,
+        "sheetCount": 1,
+        "sharedStrings": 999998,
+        "expectedSource": "D:\\MyProject\\Versora\\.tmp-binary-streaming\\xlsb-permuted.source.json",
+        "elapsedSeconds": 1.0520236000884324,
+        "allCoordinatesValuesFormulasMatch": true
+      },
+      "before": {
+        "elapsedSeconds": 3.1353723001666367,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 443318272,
+          "privateBytes": 453279744
+        },
+        "sampledPeakScratchBytes": 26,
+        "sampledPeakOutputBytes": 281039598,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 281439638
+      },
+      "after": {
+        "elapsedSeconds": 7.793415500083938,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 31330304,
+          "privateBytes": 22040576
+        },
+        "sampledPeakScratchBytes": 139999746,
+        "sampledPeakOutputBytes": 416821016,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 281439638
+      }
+    },
+    {
+      "label": "xls-single",
+      "sourceSha256": "b365ba97ae5032a6c1cc7a4dd589101152204a7d489c9eb3f6a44fe5b3eeacb5",
+      "sourceBytes": 6354432,
+      "sourceModel": {
+        "kind": "versora-binary-stress-source-v1",
+        "format": "xls",
+        "rows": 10000,
+        "columns": 100,
+        "sheetNames": [
+          "Stress"
+        ],
+        "sharedStrings": 0,
+        "stringLength": 0,
+        "sstPermutation": {
+          "multiplier": 1,
+          "offset": 0
+        }
+      },
+      "sourceModelSha256": "5f311c2f7d26223a5b5384dd76f0679858dd7a2b1d383e031b20d1df108ecdde",
+      "identicalManifestSemantics": true,
+      "identicalArtifactFiles": {
+        "base.rows.bin": true,
+        "base.rows.idx": true,
+        "content.pairs.bin": true,
+        "content.regions.bin": true,
+        "content.runs.bin": true,
+        "mine.rows.bin": true,
+        "mine.rows.idx": true,
+        "strict.pairs.bin": true,
+        "strict.regions.bin": true,
+        "strict.runs.bin": true
+      },
+      "sourceOracle": {
+        "checkedCells": 2000000,
+        "rowsPerSide": 10000,
+        "columns": 100,
+        "sheetCount": 1,
+        "sharedStrings": 0,
+        "expectedSource": "D:\\MyProject\\Versora\\.tmp-binary-streaming\\xls-single.source.json",
+        "elapsedSeconds": 0.5740223000757396,
+        "allCoordinatesValuesFormulasMatch": true
+      },
+      "before": {
+        "elapsedSeconds": 1.029775399947539,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 104337408,
+          "privateBytes": 95113216
+        },
+        "sampledPeakScratchBytes": 26,
+        "sampledPeakOutputBytes": 37222511,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 37217902
+      },
+      "after": {
+        "elapsedSeconds": 1.1749342000111938,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 21061632,
+          "privateBytes": 11730944
+        },
+        "sampledPeakScratchBytes": 36326085,
+        "sampledPeakOutputBytes": 54534996,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 37217902
+      }
+    },
+    {
+      "label": "xls-four",
+      "sourceSha256": "501316a5d7bd20b5d8acd849f89fbffe93160ef2597e47b63a12ae0f7d89cbdc",
+      "sourceBytes": 25403904,
+      "sourceModel": {
+        "kind": "versora-binary-stress-source-v1",
+        "format": "xls",
+        "rows": 10000,
+        "columns": 100,
+        "sheetNames": [
+          "Stress1",
+          "Stress2",
+          "Stress3",
+          "Stress4"
+        ],
+        "sharedStrings": 0,
+        "stringLength": 0,
+        "sstPermutation": {
+          "multiplier": 1,
+          "offset": 0
+        }
+      },
+      "sourceModelSha256": "1bfd38e4740d7daceb16a53d86a122959bd2bd4084fac031d0fa0cafc47f630f",
+      "identicalManifestSemantics": true,
+      "identicalArtifactFiles": {
+        "base.rows.bin": true,
+        "base.rows.idx": true,
+        "content.pairs.bin": true,
+        "content.regions.bin": true,
+        "content.runs.bin": true,
+        "mine.rows.bin": true,
+        "mine.rows.idx": true,
+        "strict.pairs.bin": true,
+        "strict.regions.bin": true,
+        "strict.runs.bin": true
+      },
+      "sourceOracle": {
+        "checkedCells": 8000000,
+        "rowsPerSide": 40000,
+        "columns": 100,
+        "sheetCount": 4,
+        "sharedStrings": 0,
+        "expectedSource": "D:\\MyProject\\Versora\\.tmp-binary-streaming\\xls-four.source.json",
+        "elapsedSeconds": 2.3944359000306576,
+        "allCoordinatesValuesFormulasMatch": true
+      },
+      "before": {
+        "elapsedSeconds": 3.8952081000898033,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 306913280,
+          "privateBytes": 295284736
+        },
+        "sampledPeakScratchBytes": 26,
+        "sampledPeakOutputBytes": 155550433,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 155537842
+      },
+      "after": {
+        "elapsedSeconds": 4.858984800055623,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 27193344,
+          "privateBytes": 20676608
+        },
+        "sampledPeakScratchBytes": 42680046,
+        "sampledPeakOutputBytes": 175078711,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 155537842
+      }
+    },
+    {
+      "label": "xls-20m",
+      "sourceSha256": "d1a9ba7ae0e5ace7ec9fd5e14703cf246946f5780e6e9a7ddeb852e8add495c9",
+      "sourceBytes": 123980288,
+      "sourceModel": {
+        "kind": "versora-binary-stress-source-v1",
+        "format": "xls",
+        "rows": 50000,
+        "columns": 200,
+        "sheetNames": [
+          "Stress1",
+          "Stress2"
+        ],
+        "sharedStrings": 0,
+        "stringLength": 0,
+        "sstPermutation": {
+          "multiplier": 1,
+          "offset": 0
+        }
+      },
+      "sourceModelSha256": "f8d153a7d97a4e807b8943a5ca1e5c3a57a932b1b11ea9a21224e001ca37d251",
+      "identicalManifestSemantics": true,
+      "identicalArtifactFiles": {
+        "base.rows.bin": true,
+        "base.rows.idx": true,
+        "content.pairs.bin": true,
+        "content.regions.bin": true,
+        "content.runs.bin": true,
+        "mine.rows.bin": true,
+        "mine.rows.idx": true,
+        "strict.pairs.bin": true,
+        "strict.regions.bin": true,
+        "strict.runs.bin": true
+      },
+      "sourceOracle": {
+        "checkedCells": 40000000,
+        "rowsPerSide": 100000,
+        "columns": 200,
+        "sheetCount": 2,
+        "sharedStrings": 0,
+        "expectedSource": "D:\\MyProject\\Versora\\.tmp-binary-streaming\\xls-20m.source.json",
+        "elapsedSeconds": 12.000574999954551,
+        "allCoordinatesValuesFormulasMatch": true
+      },
+      "before": {
+        "elapsedSeconds": 17.2943678998854,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 1548681216,
+          "privateBytes": 1545056256
+        },
+        "sampledPeakScratchBytes": 26,
+        "sampledPeakOutputBytes": 791323564,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 792177876
+      },
+      "after": {
+        "elapsedSeconds": 26.676230299985036,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 46071808,
+          "privateBytes": 40210432
+        },
+        "sampledPeakScratchBytes": 578357424,
+        "sampledPeakOutputBytes": 1160369440,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 792177876
+      }
+    },
+    {
+      "label": "xlsb-20m",
+      "sourceSha256": "3ac636072dc9d422317523e76972c512ceec7111750b4ad04cd34e4dabbfe18a",
+      "sourceBytes": 105557803,
+      "sourceModel": {
+        "kind": "versora-binary-stress-source-v1",
+        "format": "xlsb",
+        "rows": 100000,
+        "columns": 200,
+        "sheetNames": [
+          "Sheet1"
+        ],
+        "sharedStrings": 0,
+        "stringLength": 0,
+        "sstPermutation": {
+          "multiplier": 1,
+          "offset": 0
+        }
+      },
+      "sourceModelSha256": "2f8c6db8060e7d8c42d71ff9c781117d2adb5cdd9dc5ff21588287469d92110a",
+      "identicalManifestSemantics": true,
+      "identicalArtifactFiles": {
+        "base.rows.bin": true,
+        "base.rows.idx": true,
+        "content.pairs.bin": true,
+        "content.regions.bin": true,
+        "content.runs.bin": true,
+        "mine.rows.bin": true,
+        "mine.rows.idx": true,
+        "strict.pairs.bin": true,
+        "strict.regions.bin": true,
+        "strict.runs.bin": true
+      },
+      "sourceOracle": {
+        "checkedCells": 40000000,
+        "rowsPerSide": 100000,
+        "columns": 200,
+        "sheetCount": 1,
+        "sharedStrings": 0,
+        "expectedSource": "D:\\MyProject\\Versora\\.tmp-binary-streaming\\xlsb-20m.source.json",
+        "elapsedSeconds": 11.678529900033027,
+        "allCoordinatesValuesFormulasMatch": true
+      },
+      "before": {
+        "elapsedSeconds": 18.526102399919182,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 46108672,
+          "privateBytes": 41058304
+        },
+        "sampledPeakScratchBytes": 26,
+        "sampledPeakOutputBytes": 791323604,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 792177916
+      },
+      "after": {
+        "elapsedSeconds": 18.914315100060776,
+        "exitCode": 0,
+        "peaks": {
+          "workingSetBytes": 46116864,
+          "privateBytes": 41115648
+        },
+        "sampledPeakScratchBytes": 26,
+        "sampledPeakOutputBytes": 792184163,
+        "scratchRemoved": true,
+        "finalArtifactBytes": 792177916
+      }
+    }
+  ],
+  "checkedCellsBothSides": 98000000,
+  "fixtures": [
+    {
+      "name": "date.xls",
+      "sourceSha256": "e3eb3391a371cc1e0b85d94b9f1dd94bbcedf19733ed0ca449e2d269af758e9e",
+      "all10FilesIdentical": true,
+      "identicalManifestSemantics": true
+    },
+    {
+      "name": "date.xlsb",
+      "sourceSha256": "68d36adf4d4de3890209e786eeb89a98778d25158628f83e96587e652fbb4eca",
+      "all10FilesIdentical": true,
+      "identicalManifestSemantics": true
+    },
+    {
+      "name": "date_1904.xls",
+      "sourceSha256": "331aa4058647a509cac802f988becde2c3963e7b6f34397585842e3e1d68fbfd",
+      "all10FilesIdentical": true,
+      "identicalManifestSemantics": true
+    },
+    {
+      "name": "date_1904.xlsb",
+      "sourceSha256": "afc2478a94822c624c44291c8455c172d6d45cc7828849f0168950b9230cb7d8",
+      "all10FilesIdentical": true,
+      "identicalManifestSemantics": true
+    },
+    {
+      "name": "issues.xlsb",
+      "sourceSha256": "06c648de5529e022ef399a2b6ebc227040e9fdf71a0780e19e614f556bdb53d7",
+      "all10FilesIdentical": true,
+      "identicalManifestSemantics": true
+    },
+    {
+      "name": "merge_cells.xls",
+      "sourceSha256": "8900c1ed9184c3af774f56cc5d459377219603dd37cbfaa911fb6f759c780597",
+      "all10FilesIdentical": true,
+      "identicalManifestSemantics": true
+    },
+    {
+      "name": "streaming_boundaries.xls",
+      "sourceSha256": "e394c775df67d82d948bfc56b42be94808d3632454813d3d50398c59a8ed538b",
+      "all10FilesIdentical": true,
+      "identicalManifestSemantics": true
+    },
+    {
+      "name": "streaming_permuted.xlsb",
+      "sourceSha256": "389616ab177755997a00b243424fd99d8ddacbba7f62e85445d62f4322a9d77d",
+      "all10FilesIdentical": true,
+      "identicalManifestSemantics": true
+    },
+    {
+      "name": "xls_formula.xls",
+      "sourceSha256": "553f0417bacbb34c7755cbe7334ecc63f850cb099d02af503143a9c679278a87",
+      "all10FilesIdentical": true,
+      "identicalManifestSemantics": true
+    }
+  ],
+  "edgeCheckedCellsBothSides": 330,
+  "nodeTests": {
+    "final-unit.log": {
+      "files": 191,
+      "tests": 834,
+      "failed": 0,
+      "skipped": 0
+    },
+    "final-native-integration.log": {
+      "files": 5,
+      "tests": 32,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "desktopLargeXlsb": {
+    "status": "passed",
+    "report": ".tmp-binary-streaming/desktop-xlsb-20m-navigation.json",
+    "parserSha256": "0467a6ab0d1ba314d303c3744e47c50b2aca603306c42112c439d1787cc5a593",
+    "sourceSha256": "3ac636072dc9d422317523e76972c512ceec7111750b4ad04cd34e4dabbfe18a",
+    "rowsPerSide": 100000,
+    "columns": 200,
+    "cellsPerSide": 20000000,
+    "rustPrepareMs": 19066.3636,
+    "mainLoadMs": 19219.9261,
+    "launchToPaintedReadyMs": 22900.9188,
+    "verificationElapsedMs": 34982.761,
+    "checkedCellsBothSidesPerMode": 10,
+    "modes": ["strict", "content"],
+    "paintedTailRowLayouts": ["split-h", "split-v", "unified"],
+    "search": {
+      "query": "19999998",
+      "totalCount": 1,
+      "truncated": false,
+      "uiNavigatedAddress": "GQ100000",
+      "displayedValue": "19999998"
+    },
+    "processMemory": {
+      "units": "KiB",
+      "measurement": "Electron process metrics; initial strict paint before bounded pixel probes/screenshots; interaction peaks include rapid layout switches, screenshots and search navigation; per-process peaks are not necessarily simultaneous",
+      "initialStrictPaint": {
+        "rendererWorkingSet": 384220,
+        "gpuWorkingSet": 187916
+      },
+      "interactionPeakWorkingSet": {
+        "renderer": 1499148,
+        "gpu": 705664
+      },
+      "wholeApplicationMemoryBounded": false
+    },
+    "pageErrors": 0,
+    "screenshotsVisuallyInspected": true
+  }
+}

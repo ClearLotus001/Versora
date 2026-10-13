@@ -106,3 +106,28 @@ test('computeDiff preserves oversized shared prefix and suffix around a middle i
   assert.equal(result[insertAt + 1]?.mineLineNo, insertAt + 2);
   assert.equal(result.filter((line) => line.type === 'equal').length, baseLines.length);
 });
+
+for (const lineCount of [25_000, 60_000]) {
+  test(`computeDiff preserves ${lineCount} middle anchors between changed boundaries`, async () => {
+    const computeDiff = await loadComputeDiff();
+    const sharedLines = Array.from({ length: lineCount }, (_, index) => `unique-line-${index}`);
+    const baseText = ['base boundary', ...sharedLines, 'base end'].join('\n');
+    const mineText = ['mine boundary', ...sharedLines, 'mine end'].join('\n');
+
+    const result = computeDiff(baseText, mineText);
+
+    assert.equal(result.length, lineCount + 4);
+    assert.equal(result[0]?.type, 'delete');
+    assert.equal(result[1]?.type, 'add');
+    for (let index = 0; index < lineCount; index += 1) {
+      const line = result[index + 2]!;
+      assert.equal(line.type, 'equal');
+      assert.equal(line.base, sharedLines[index]);
+      assert.equal(line.mine, sharedLines[index]);
+      assert.equal(line.baseLineNo, index + 2);
+      assert.equal(line.mineLineNo, index + 2);
+    }
+    assert.equal(result.at(-2)?.type, 'delete');
+    assert.equal(result.at(-1)?.type, 'add');
+  });
+}

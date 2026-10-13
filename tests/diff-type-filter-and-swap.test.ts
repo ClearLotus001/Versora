@@ -110,13 +110,10 @@ test('side swapping preserves canonical replacement blocks and is reversible', (
     launchMineName: 'Right',
     baseContent: 'same\nstatus: before',
     mineContent: 'same\nstatus: after',
-    baseBytes: null,
-    mineBytes: null,
     analysisSnapshotsByMode: {
       strict: {
         compareMode: 'strict',
         textAnalysis: prepareTextDiffAnalysisFromDiffLines(diffLines),
-        workbookAnalysis: null,
       },
     },
     revisionSwitchableSides: { base: true, mine: false },

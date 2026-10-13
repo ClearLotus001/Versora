@@ -22,14 +22,6 @@ export function logDebugTiming(message: string, payload?: unknown): void {
   writeExternalDiffDebugLog(message, payload);
 }
 
-export function logRustDebugStderr(label: string, stderr: string): void {
-  if (process.env.SVN_DIFF_DEBUG_TIMING !== '1') return;
-  const normalized = stderr.trim();
-  if (!normalized) return;
-  logMain(label, normalized);
-  writeExternalDiffDebugLog(label, { stderr: normalized });
-}
-
 function toSerializableDebugValue(value: unknown): unknown {
   if (value == null) return value;
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {

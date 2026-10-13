@@ -1,4 +1,5 @@
 import type { CompactTextDiffLines, DiffData, DiffLine } from '@/types';
+import { materializeCompactTextSplitRowDescriptors } from '../../../shared/textSplitRowTransport';
 
 const materializedLineCache = new WeakMap<CompactTextDiffLines, DiffLine[]>();
 const materializedDataCache = new WeakMap<DiffData, DiffData>();
@@ -125,16 +126,25 @@ export function materializeCompactTransportDiffData(data: DiffData): DiffData {
   for (const compareMode of ['strict', 'content'] as const) {
     const snapshot = snapshots[compareMode];
     const textAnalysis = snapshot?.textAnalysis;
-    if (!snapshot || !textAnalysis?.compactDiffLines) continue;
+    if (!snapshot || !textAnalysis || (!textAnalysis.compactDiffLines && !textAnalysis.compactSplitRowDescriptors)) continue;
 
     if (nextSnapshots === snapshots) nextSnapshots = { ...snapshots };
     const nextTextAnalysis = {
       ...textAnalysis,
-      diffLines: textAnalysis.diffLines.length > 0
+      diffLines: textAnalysis.diffLines.length > 0 || !textAnalysis.compactDiffLines
         ? textAnalysis.diffLines
         : materializeCompactTextDiffLines(textAnalysis.compactDiffLines),
     };
+    if (textAnalysis.compactSplitRowDescriptors) {
+      nextTextAnalysis.splitRowDescriptors = textAnalysis.splitRowDescriptors.length > 0
+        ? textAnalysis.splitRowDescriptors
+        : materializeCompactTextSplitRowDescriptors(
+            textAnalysis.compactSplitRowDescriptors,
+            nextTextAnalysis.diffLines.length,
+          );
+    }
     delete nextTextAnalysis.compactDiffLines;
+    delete nextTextAnalysis.compactSplitRowDescriptors;
     nextSnapshots[compareMode] = {
       ...snapshot,
       textAnalysis: nextTextAnalysis,

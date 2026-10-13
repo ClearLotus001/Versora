@@ -76,6 +76,33 @@ test('minimap keeps unrelated add/delete lines as their original tones', () => {
   assert.equal(resolveMiniMapLineTone(diffLines[1]!, 1, replacementPairIndex), 'add');
 });
 
+test('horizontal split minimap retains its geometry and search hits without a height array', () => {
+  const diffLines: DiffLine[] = [
+    makeEqualLine('same', 1),
+    makeDeleteLine('before', 2),
+    makeAddLine('after', 2),
+  ];
+  const items: SplitRenderItem[] = [
+    ...buildSplitRows(diffLines).map((row) => ({ kind: 'split-line' as const, row, lineIdx: row.lineIdx })),
+    {
+      kind: 'split-collapse',
+      count: 100,
+      blockId: 'hidden',
+      fromIdx: 3,
+      toIdx: 102,
+      hiddenStart: 0,
+      hiddenEnd: 99,
+      expandStep: 10,
+    },
+  ];
+  const searchHits = new Set([2, 50]);
+
+  assert.deepEqual(
+    buildSplitMiniMapSegments(items, [], searchHits),
+    buildSplitMiniMapSegments(items, items.map(() => ROW_H), searchHits),
+  );
+});
+
 test('split minimap uses rendered rows so trailing additions stay inside collapsed viewport space', () => {
   const diffLines: DiffLine[] = [
     ...Array.from({ length: 100 }, (_, index) => makeEqualLine(`stable line ${index + 1}`, index + 1)),

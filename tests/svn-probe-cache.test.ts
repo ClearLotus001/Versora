@@ -3,15 +3,10 @@ import assert from 'node:assert/strict';
 
 import { EMPTY_CLI_ARGS } from '../electron/cliArgs';
 import {
-  fileEqualityCache,
   filePayloadCache,
   getSessionCacheGeneration,
   revisionPayloadCache,
   setActiveCliArgs,
-  workbookCompareCache,
-  workbookCompareInFlight,
-  workbookMetadataCache,
-  workbookMetadataInFlight,
 } from '../electron/main/state';
 import {
   localSvnUrlCache,
@@ -37,11 +32,7 @@ test('setActiveCliArgs clears local SVN probe caches', () => {
 test('setActiveCliArgs advances the session and releases every large main-process cache', () => {
   filePayloadCache.set('file', {} as never);
   revisionPayloadCache.set('revision', {} as never);
-  fileEqualityCache.set('equality', {} as never);
-  workbookCompareCache.set('compare', {} as never);
-  workbookCompareInFlight.set('compare', Promise.resolve(null));
-  workbookMetadataCache.set('metadata', {} as never);
-  workbookMetadataInFlight.set('metadata', Promise.resolve({} as never));
+
   const previousGeneration = getSessionCacheGeneration();
 
   setActiveCliArgs({
@@ -53,11 +44,6 @@ test('setActiveCliArgs advances the session and releases every large main-proces
   for (const cache of [
     filePayloadCache,
     revisionPayloadCache,
-    fileEqualityCache,
-    workbookCompareCache,
-    workbookCompareInFlight,
-    workbookMetadataCache,
-    workbookMetadataInFlight,
   ]) {
     assert.equal(cache.size, 0);
   }

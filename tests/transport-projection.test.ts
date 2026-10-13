@@ -3,11 +3,8 @@ import assert from 'node:assert/strict';
 
 import { projectTransportDiffData } from '../electron/main/transportProjection.js';
 import type {
-  DiffAnalysisSnapshot,
   DiffData,
   DiffLine,
-  WorkbookMetadataMap,
-  WorkbookPrecomputedDeltaPayload,
 } from '../electron/main/types.js';
 
 function createDiffLine(type: DiffLine['type'], base: string | null, mine: string | null): DiffLine {
@@ -21,101 +18,6 @@ function createDiffLine(type: DiffLine['type'], base: string | null, mine: strin
     mineCharSpans: null,
   };
 }
-
-function createWorkbookMetadata(sheetName: string): WorkbookMetadataMap {
-  return {
-    sheets: {
-      [sheetName]: {
-        name: sheetName,
-        hiddenColumns: [],
-        mergeRanges: [],
-      },
-    },
-  };
-}
-
-function createWorkbookDelta(compareMode: 'strict' | 'content'): WorkbookPrecomputedDeltaPayload {
-  return {
-    compareMode,
-    sections: [
-      {
-        name: 'Sheet1',
-        rows: [],
-      },
-    ],
-  };
-}
-
-function createWorkbookSnapshot(
-  compareMode: 'strict' | 'content',
-  diffLines: DiffLine[],
-): DiffAnalysisSnapshot {
-  return {
-    compareMode,
-    textAnalysis: null,
-    workbookAnalysis: {
-      diffLinesByMode: {
-        [compareMode]: diffLines,
-      },
-      workbookDeltaByMode: {
-        [compareMode]: createWorkbookDelta(compareMode),
-      },
-      metadata: {
-        base: createWorkbookMetadata('Sheet1'),
-        mine: createWorkbookMetadata('Sheet1'),
-      },
-      artifactDiff: null,
-      perf: {
-        metadataMs: 1,
-        rustDiffMs: 2,
-      },
-    },
-  };
-}
-
-test('projectTransportDiffData leaves snapshot-only workbook payloads unchanged', () => {
-  const strictDiffLines = [
-    createDiffLine('equal', '@@sheet\tSheet1', '@@sheet\tSheet1'),
-    createDiffLine('add', null, '@@row\t1\tBravo'),
-  ];
-  const data: DiffData = {
-    svnUrl: '',
-    fileName: 'demo.xlsx',
-    sourceIdentity: 'local-dev::demo.xlsx',
-    compareContext: 'literal_two_file_compare',
-    timelineTargetUrl: null,
-    workingCopyAvailable: false,
-    initialPair: null,
-    resetPair: null,
-    launchBaseName: 'base.xlsx',
-    launchMineName: 'mine.xlsx',
-    baseName: 'base.xlsx',
-    mineName: 'mine.xlsx',
-    baseContent: null,
-    mineContent: null,
-    baseBytes: null,
-    mineBytes: null,
-    analysisSnapshotsByMode: {
-      strict: createWorkbookSnapshot('strict', strictDiffLines),
-    },
-    baseWorkbookMetadata: createWorkbookMetadata('Sheet1'),
-    mineWorkbookMetadata: createWorkbookMetadata('Sheet1'),
-    revisionOptions: null,
-    baseRevisionInfo: null,
-    mineRevisionInfo: null,
-    canSwitchRevisions: false,
-    workbookArtifactDiff: null,
-    sourceNoticeCode: null,
-    perf: {
-      source: 'cli',
-    },
-  };
-
-  const projected = projectTransportDiffData(data);
-
-  assert.equal(projected, data);
-  assert.equal(projected.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict, strictDiffLines);
-});
 
 test('projectTransportDiffData strips large raw text payloads when snapshot text analysis already covers first paint', () => {
   const baseContent = `${'const value = 1;\n'.repeat(12_000)}`;
@@ -139,8 +41,6 @@ test('projectTransportDiffData strips large raw text payloads when snapshot text
     mineName: 'mine.ts',
     baseContent,
     mineContent,
-    baseBytes: null,
-    mineBytes: null,
     analysisSnapshotsByMode: {
       strict: {
         compareMode: 'strict',
@@ -154,7 +54,6 @@ test('projectTransportDiffData strips large raw text payloads when snapshot text
           ],
           perf: { diffMs: 1 },
         },
-        workbookAnalysis: null,
       },
     },
     baseWorkbookMetadata: null,
@@ -202,8 +101,6 @@ test('projectTransportDiffData uses columnar lines for large prepared text snaps
     mineName: 'mine.ts',
     baseContent,
     mineContent,
-    baseBytes: null,
-    mineBytes: null,
     analysisSnapshotsByMode: {
       strict: {
         compareMode: 'strict',
@@ -214,7 +111,6 @@ test('projectTransportDiffData uses columnar lines for large prepared text snaps
           splitRowDescriptors: [],
           perf: { diffMs: 1 },
         },
-        workbookAnalysis: null,
       },
     },
     baseWorkbookMetadata: null,

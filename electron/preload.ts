@@ -1,26 +1,37 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import type {
+  WorkbookArtifactCellsRequest, WorkbookArtifactSearchRequest,
+  WorkbookArtifactSourceRowsRequest, WorkbookArtifactViewRequest, WorkbookArtifactWindowRequest,
+} from '../shared/workbookArtifactProtocol.js';
 
 const versoraApi = {
+  getWorkbookArtifactView: (request: WorkbookArtifactViewRequest) => ipcRenderer.invoke('workbook-artifact-view', request),
+  readWorkbookArtifactWindow: (request: WorkbookArtifactWindowRequest) => ipcRenderer.invoke('workbook-artifact-window', request),
+  readWorkbookArtifactCells: (request: WorkbookArtifactCellsRequest) => ipcRenderer.invoke('workbook-artifact-cells', request),
+  readWorkbookArtifactSourceRows: (request: WorkbookArtifactSourceRowsRequest) => ipcRenderer.invoke('workbook-artifact-source-rows', request),
+  searchWorkbookArtifact: (request: WorkbookArtifactSearchRequest) => ipcRenderer.invoke('workbook-artifact-search', request),
+  cancelWorkbookArtifactSearch: (artifactId: string, requestId?: string) => ipcRenderer.invoke('workbook-artifact-cancel-search', { artifactId, requestId }),
   notifyRendererReady: () => ipcRenderer.send('renderer-ready'),
-  releaseSessionResources: () => ipcRenderer.invoke('release-session-resources'),
+  releaseSessionResources: (comparisonSessionId?: string) => ipcRenderer.invoke('release-session-resources', { comparisonSessionId }),
   saveStartupAppearance: (appearance: { themeKey?: 'dark' | 'light' | 'hc'; locale?: 'zh-CN' | 'en-US' }) => ipcRenderer.send('save-startup-appearance', appearance),
   getLaunchContext: () => ipcRenderer.invoke('get-launch-context'),
-  getDiffData: (compareMode?: 'strict' | 'content') => ipcRenderer.invoke('get-diff-data', { compareMode }),
-  loadRevisionDiff: (baseRevisionId: string, mineRevisionId: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-revision-diff', { baseRevisionId, mineRevisionId, compareMode }),
-  loadTwoFileRevisionDiff: (baseRevisionId: string, mineRevisionId: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-two-file-revision-diff', { baseRevisionId, mineRevisionId, compareMode }),
-  loadLineBlame: (baseRevisionId?: string, mineRevisionId?: string) => ipcRenderer.invoke('load-line-blame', { baseRevisionId, mineRevisionId }),
-  loadWorkingCopyLineBlame: (basePath: string, minePath: string) => ipcRenderer.invoke('load-working-copy-line-blame', { basePath, minePath }),
-  loadTwoFileVersionLineBlame: (baseRevisionId: string, mineRevisionId: string) => ipcRenderer.invoke('load-two-file-version-line-blame', { baseRevisionId, mineRevisionId }),
-  getRevisionOptions: () => ipcRenderer.invoke('get-revision-options'),
+  getDiffData: (compareMode?: 'strict' | 'content', comparisonSessionId?: string) => ipcRenderer.invoke('get-diff-data', { compareMode, comparisonSessionId }),
+  loadRevisionDiff: (baseRevisionId: string, mineRevisionId: string, compareMode?: 'strict' | 'content', comparisonSessionId?: string) => ipcRenderer.invoke('load-revision-diff', { baseRevisionId, mineRevisionId, compareMode, comparisonSessionId }),
+  loadTwoFileRevisionDiff: (baseRevisionId: string, mineRevisionId: string, compareMode?: 'strict' | 'content', comparisonSessionId?: string) => ipcRenderer.invoke('load-two-file-revision-diff', { baseRevisionId, mineRevisionId, compareMode, comparisonSessionId }),
+  swapTwoFileDiff: (baseRevisionId: string | null, mineRevisionId: string | null, compareMode?: 'strict' | 'content', comparisonSessionId?: string) => ipcRenderer.invoke('swap-two-file-diff', { baseRevisionId, mineRevisionId, compareMode, comparisonSessionId }),
+  loadLineBlame: (baseRevisionId?: string, mineRevisionId?: string, comparisonSessionId?: string) => ipcRenderer.invoke('load-line-blame', { baseRevisionId, mineRevisionId, comparisonSessionId }),
+  loadWorkingCopyLineBlame: (basePath: string, minePath: string, comparisonSessionId?: string) => ipcRenderer.invoke('load-working-copy-line-blame', { basePath, minePath, comparisonSessionId }),
+  loadTwoFileVersionLineBlame: (baseRevisionId: string, mineRevisionId: string, comparisonSessionId?: string) => ipcRenderer.invoke('load-two-file-version-line-blame', { baseRevisionId, mineRevisionId, comparisonSessionId }),
+  getRevisionOptions: (comparisonSessionId?: string) => ipcRenderer.invoke('get-revision-options', { comparisonSessionId }),
   queryRevisionOptions: (query?: {
     limit?: number;
     beforeRevisionId?: string;
     anchorDateTime?: string;
     includeSpecials?: boolean;
     targetSide?: 'base' | 'mine';
-  }) => ipcRenderer.invoke('query-revision-options', query),
-  loadWorkbookCompareMode: (compareMode: 'strict' | 'content', baseRevisionId?: string, mineRevisionId?: string) => ipcRenderer.invoke('load-workbook-compare-mode', { compareMode, baseRevisionId, mineRevisionId }),
-  loadWorkbookMetadata: (baseRevisionId?: string, mineRevisionId?: string) => ipcRenderer.invoke('load-workbook-metadata', { baseRevisionId, mineRevisionId }),
+  }, comparisonSessionId?: string) => ipcRenderer.invoke('query-revision-options', { ...query, comparisonSessionId }),
+  loadWorkbookCompareMode: (compareMode: 'strict' | 'content', baseRevisionId?: string, mineRevisionId?: string, comparisonSessionId?: string) => ipcRenderer.invoke('load-workbook-compare-mode', { compareMode, baseRevisionId, mineRevisionId, comparisonSessionId }),
+  loadWorkbookMetadata: (baseRevisionId?: string, mineRevisionId?: string, comparisonSessionId?: string) => ipcRenderer.invoke('load-workbook-metadata', { baseRevisionId, mineRevisionId, comparisonSessionId }),
   onCliArgsUpdated: (listener: () => void) => {
     const wrapped = () => listener();
     ipcRenderer.on('cli-args-updated', wrapped);
@@ -32,9 +43,9 @@ const versoraApi = {
   pickDiffFile: () => ipcRenderer.invoke('pick-diff-file'),
   pickComparableFile: (side: 'base' | 'mine', requiredExtension?: string) => ipcRenderer.invoke('pick-comparable-file', { side, requiredExtension }),
   getPathForDroppedFile: (file: File) => webUtils.getPathForFile(file),
-  loadDevWorkingCopyDiff: (filePath: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-dev-working-copy-diff', { filePath, compareMode }),
-  loadLocalDiff: (basePath: string, minePath: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-local-diff', { basePath, minePath, compareMode }),
-  loadLocalFileDiff: (basePath: string, minePath: string, compareMode?: 'strict' | 'content') => ipcRenderer.invoke('load-local-file-diff', { basePath, minePath, compareMode }),
+  loadDevWorkingCopyDiff: (filePath: string, compareMode?: 'strict' | 'content', comparisonSessionId?: string) => ipcRenderer.invoke('load-dev-working-copy-diff', { filePath, compareMode, comparisonSessionId }),
+  loadLocalDiff: (basePath: string, minePath: string, compareMode?: 'strict' | 'content', comparisonSessionId?: string) => ipcRenderer.invoke('load-local-diff', { basePath, minePath, compareMode, comparisonSessionId }),
+  loadLocalFileDiff: (basePath: string, minePath: string, compareMode?: 'strict' | 'content', comparisonSessionId?: string) => ipcRenderer.invoke('load-local-file-diff', { basePath, minePath, compareMode, comparisonSessionId }),
   getSvnDiffViewerStatus: () => ipcRenderer.invoke('get-svn-diff-viewer-status'),
   configureSvnDiffViewer: (scope: 'all-files' | 'text-only' | 'workbook-only') => ipcRenderer.invoke('configure-svn-diff-viewer', { scope }),
   restoreSvnDefaultDiffViewerConfiguration: () => ipcRenderer.invoke('restore-svn-default-diff-viewer-configuration'),

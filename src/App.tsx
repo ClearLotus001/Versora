@@ -58,8 +58,9 @@ import {
   type CachedDiffResult,
   type WorkbookUiController,
 } from '@/hooks/app';
-import { getPreparedWorkbookDeltaForMode } from '@/hooks/app/helpers';
 import { useAppStore } from '@/store/appStore';
+import useComparisonSessions from '@/hooks/app/useComparisonSessions';
+import ComparisonTabs from '@/components/navigation/ComparisonTabs';
 import PerfBar from '@/components/app/PerfBar';
 import { resolveAppUpdateNotice } from '@/components/app/global-bot/sources/appUpdateNotice';
 import { resolveDiffSummaryMessages } from '@/components/app/global-bot/sources/diffSummaryMessages';
@@ -76,11 +77,10 @@ import StatsBar from '@/components/navigation/StatsBar';
 import { copyText } from '@/utils/app/clipboard';
 import { shouldOpenTwoFilePicker } from '@/utils/app/filePickerRouting';
 import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
-import { disposeTextSearchWorker } from '@/utils/diff/computeSearchMatchesAsync';
 import { findWorkbookDiffRegionNavigationIndex } from '@/utils/workbook/workbookDiffRegion';
-import { clearWorkbookCanvasBitmapCache } from '@/utils/workbook/workbookCanvasBitmapCache';
 import { summarizeWorkbookCellChanges } from '@/utils/workbook/workbookCellChangeSummary';
 import { swapDiffDataSides } from '@/utils/diff/swapDiffSides';
+import { shouldEnableE2EBridge, swapE2EWorkbookDiffData } from '@/utils/app/e2eBridge';
 
 // ═════════════════════════════════════════════════════════════════════════════
 // ROOT APP
@@ -114,7 +114,6 @@ export default function App() {
   const setBotEnabled = useAppStore((s) => s.setBotEnabled);
   const setFontSize = useAppStore((s) => s.setFontSize);
   const setTextSplitHeaderRatio = useAppStore((s) => s.setTextSplitHeaderRatio);
-  const resetDiffSessionToHome = useAppStore((s) => s.resetDiffSessionToHome);
 
   // Diff Data (needed by JSX: notice bars, panelProps, debug)
   const diffLines = useAppStore((s) => s.diffLines);
@@ -136,6 +135,7 @@ export default function App() {
 
   // Navigation (needed by JSX: Toolbar, panelProps, handlers)
   const hunkIdx = useAppStore((s) => s.hunkIdx);
+  const guidedPulseNonce = useAppStore((s) => s.guidedPulseNonce);
   const setHunkIdx = useAppStore((s) => s.setHunkIdx);
   const setGuidedPulseNonce = useAppStore((s) => s.setGuidedPulseNonce);
 
@@ -226,7 +226,6 @@ export default function App() {
   const setShowLocalFileCompare = useCallback((value: SetStateAction<boolean>) => {
     dialogActions.set('localFileCompare', value);
   }, [dialogActions]);
-  const closeAllDialogs = dialogActions.closeAll;
   const previousShowSearchRef = useRef(showSearch);
   const [installedUpdateVersion, setInstalledUpdateVersion] = useState<string | null>(null);
   const suppressTransientTooltips = showSearch
@@ -257,6 +256,14 @@ export default function App() {
     isSearchingRevisionDateTime,
     isSwitchingRevisions,
   } = revisionQueryState;
+
+  const sessions = useComparisonSessions({
+    currentDiffDataRef, diffResultCacheRef, textLayoutSnapshotsRef,
+    textSharedExpandedBlocksRef, workbookLayoutSnapshotsRef, workbookSharedExpandedBlocksRef,
+    revisionOptionsRef, hasLoadedDiffRef, workbookCompareModeRef, loadSeqRef, revisionQuerySeqRef,
+    diffLoad, revisionQuery, dialogs,
+  });
+  const { selectComparison } = sessions;
 
   // ── Derived State ───────────────────────────────────────────────────────
   const workbookUi = useMemo<WorkbookUiController>(() => ({
@@ -316,8 +323,6 @@ export default function App() {
     mineStatsTitle,
     activeFreezeState,
     activeSelectionMergeRanges,
-    artifactNoticeKey,
-    diffSourceNoticeKey,
     hunks,
     preparedTextAnalysis,
     textDiffStats,
@@ -356,6 +361,7 @@ export default function App() {
     currentDiffData: currentDiffDataRef.current,
     diffTypeFilter,
     showOnlyDifferences,
+    onError: diffLoad.actions.setError,
   });
   const textDiffPresentation = useMemo(() => ({
     stats: preparedTextAnalysis?.stats ?? textDiffStats,
@@ -368,11 +374,6 @@ export default function App() {
     isWorkbookMode,
     themeKey,
   });
-  const preparedWorkbookDelta = getPreparedWorkbookDeltaForMode(
-    currentDiffDataRef.current,
-    workbookCompareMode,
-  );
-
   useEffect(() => {
     if (diffTypeFilter !== 'all' && !diffTypeAvailability[diffTypeFilter]) {
       setDiffTypeFilter('all');
@@ -389,8 +390,6 @@ export default function App() {
   // ── Chrome Effects ────────────────────────────────────────────────────
   useAppChromeEffects({
     revisionOptionsRef,
-    artifactNoticeKey,
-    diffSourceNoticeKey,
     hasLoadedDiff,
     hasLoadedDiffRef,
     workbookCompareModeRef,
@@ -405,12 +404,15 @@ export default function App() {
     handlePickWorkingCopyFile,
     pickComparableFile,
     handleCompareLocalFiles,
+    handleSwapTwoFileDiff,
     loadSvnDiffViewerStatus,
     handleOpenSvnConfig,
     handleApplySvnDiffViewerScope,
     handleRestoreSvnDiffViewerDefault,
     reloadCliDiffData,
   } = useDiffLoader({
+    onOpenComparison: sessions.openComparison,
+    onBackgroundLineBlame: sessions.applyBackgroundLineBlame,
     loadSeqRef,
     hasLoadedDiffRef,
     workbookCompareModeRef,
@@ -435,6 +437,8 @@ export default function App() {
     handleRevisionCompareChange,
     handleResetRevisionCompare,
   } = useRevisionCompare({
+    currentDiffDataRef,
+    activeComparisonId: sessions.activeId,
     revisionOptionsRef,
     revisionQuerySeqRef,
     loadSeqRef,
@@ -447,10 +451,8 @@ export default function App() {
 
   // ── Electron Lifecycle ────────────────────────────────────────────────
   useElectronLifecycleEffects({
-    applyDiffData,
     reloadCliDiffData,
     onLaunchedAfterUpdate: setInstalledUpdateVersion,
-    workbookCompareModeRef,
     loadSeqRef,
     revisionQuerySeqRef,
     diffLoad,
@@ -478,39 +480,39 @@ export default function App() {
     if (
       isElectron
       && compareContext === 'literal_two_file_compare'
-      && currentData.basePath
-      && currentData.minePath
-      && window.versora?.loadLocalFileDiff
     ) {
-      await handleCompareLocalFiles(currentData.minePath, currentData.basePath);
+      await handleSwapTwoFileDiff();
       return;
     }
 
     const currentBaseRevisionId = currentData.baseRevisionInfo?.id ?? '';
     const currentMineRevisionId = currentData.mineRevisionInfo?.id ?? '';
-    const canReloadRevisionPair = compareContext === 'literal_two_file_compare'
-      ? typeof window.versora?.loadTwoFileRevisionDiff === 'function'
-      : typeof window.versora?.loadRevisionDiff === 'function';
     if (
       isElectron
       && currentBaseRevisionId
       && currentMineRevisionId
-      && canReloadRevisionPair
+      && typeof window.versora?.loadRevisionDiff === 'function'
     ) {
       await handleRevisionCompareChange(currentMineRevisionId, currentBaseRevisionId);
       return;
     }
 
-    await applyDiffData(swapDiffDataSides(currentData), {
+    if (currentData.workbookArtifact && (isElectron || !shouldEnableE2EBridge())) {
+      diffLoad.actions.setError(t('workbookSwapUnavailable'));
+      return;
+    }
+    await applyDiffData(currentData.workbookArtifact ? swapE2EWorkbookDiffData(currentData) : swapDiffDataSides(currentData), {
       loadingAlreadyStarted: true,
     });
   }, [
     applyDiffData,
     compareContext,
-    handleCompareLocalFiles,
+    handleSwapTwoFileDiff,
     handleRevisionCompareChange,
     isElectron,
     isLoadingDiff,
+    diffLoad.actions,
+    t,
   ]);
   const activeWorkbookCellChangeSummary = useMemo(() => (
     isWorkbookMode
@@ -570,6 +572,11 @@ export default function App() {
     });
   }, [displayFileName, isWorkbookMode, layout, setLayout, workbookCompareMode]);
   const handleTextLayoutSnapshotChange = useCallback((snapshot: TextLayoutSnapshot) => {
+    if (sessions.activeId !== sessions.activeIdRef.current) {
+      // Unmounted viewers may emit after their DOM refs have been detached.
+      // Their last live snapshot was already retained by saveActive().
+      return;
+    }
     textLayoutSnapshotsRef.current = {
       ...textLayoutSnapshotsRef.current,
       [snapshot.layout]: snapshot,
@@ -577,9 +584,12 @@ export default function App() {
     if (snapshot.layout === 'split-h') {
       setTextSplitHeaderRatio(snapshot.splitRatio);
     }
-  }, [setTextSplitHeaderRatio]);
+  }, [setTextSplitHeaderRatio, sessions.activeId, sessions.activeIdRef]);
   const handleTextExpandedBlocksChange = useCallback((expandedBlocks: CollapseExpansionState) => {
     const nextExpandedBlocks = cloneCollapseExpansionState(expandedBlocks);
+    if (sessions.activeId !== sessions.activeIdRef.current) {
+      return;
+    }
     textSharedExpandedBlocksRef.current = nextExpandedBlocks;
     textLayoutSnapshotsRef.current = {
       unified: textLayoutSnapshotsRef.current.unified
@@ -592,10 +602,13 @@ export default function App() {
         ? { ...textLayoutSnapshotsRef.current['split-v'], expandedBlocks: nextExpandedBlocks }
         : textLayoutSnapshotsRef.current['split-v'],
     };
-  }, []);
+  }, [sessions.activeId, sessions.activeIdRef]);
   const handleWorkbookLayoutSnapshotChange = useCallback((
     snapshot: WorkbookCompareLayoutSnapshot | WorkbookHorizontalLayoutSnapshot,
   ) => {
+    if (sessions.activeId !== sessions.activeIdRef.current) {
+      return;
+    }
     const nextState = applyWorkbookLayoutSnapshot(
       workbookSharedExpandedBlocksRef.current,
       workbookLayoutSnapshotsRef.current,
@@ -603,12 +616,13 @@ export default function App() {
     );
     workbookSharedExpandedBlocksRef.current = nextState.sharedExpandedBlocksByContext;
     workbookLayoutSnapshotsRef.current = nextState.snapshots;
-  }, []);
+  }, [sessions.activeId, sessions.activeIdRef]);
   const handleWorkbookExpandedBlocksChange = useCallback((
     sheetName: string | null,
     activeRegionId: string | null,
     expandedBlocks: CollapseExpansionState,
   ) => {
+    if (sessions.activeId !== sessions.activeIdRef.current) return;
     const nextState = applyWorkbookExpandedBlocksChange(
       workbookSharedExpandedBlocksRef.current,
       workbookLayoutSnapshotsRef.current,
@@ -618,7 +632,7 @@ export default function App() {
     );
     workbookSharedExpandedBlocksRef.current = nextState.sharedExpandedBlocksByContext;
     workbookLayoutSnapshotsRef.current = nextState.snapshots;
-  }, []);
+  }, [sessions.activeId, sessions.activeIdRef]);
 
   const handleWorkbookNavigationReady = useCallback(
     (fn: ((direction: WorkbookMoveDirection) => void) | null) => {
@@ -644,6 +658,8 @@ export default function App() {
     workbookContextMenuSections,
   } = useWorkbookActions({
     t,
+    currentDiffDataRef,
+    onError: diffLoad.actions.setError,
     selectedCell,
     fontSize,
     workbookCompareMode,
@@ -745,39 +761,12 @@ export default function App() {
     twoFileMinePath,
   ]);
   const handleReturnHome = useCallback(() => {
-    loadSeqRef.current += 1;
-    revisionQuerySeqRef.current += 1;
-    hasLoadedDiffRef.current = false;
-    currentDiffDataRef.current = null;
-    diffResultCacheRef.current.clear();
-    clearWorkbookCanvasBitmapCache();
-    disposeTextSearchWorker();
-    void window.versora?.releaseSessionResources?.();
-    revisionOptionsRef.current = [];
-    textLayoutSnapshotsRef.current = createEmptyTextLayoutSnapshots();
-    textSharedExpandedBlocksRef.current = EMPTY_COLLAPSE_EXPANSION_STATE;
-    workbookLayoutSnapshotsRef.current = createEmptyWorkbookLayoutSnapshots();
-    workbookSharedExpandedBlocksRef.current = new Map();
+    selectComparison(null);
     scrollToIndexRef.current = null;
     workbookMoveRef.current = null;
     collapseNavigationRef.current = null;
     previousShowSearchRef.current = false;
-    resetDiffSessionToHome();
-    diffLoad.actions.setLoading(false);
-    diffLoad.actions.setLoaded(false);
-    diffLoad.actions.setPhase('idle');
-    diffLoad.actions.setError('');
-    diffLoad.actions.setMetrics(null);
-    revisionQuery.actions.setStatus('idle');
-    revisionQuery.actions.setHasMore(false);
-    revisionQuery.actions.setNextBeforeId(null);
-    revisionQuery.actions.setQueryDateTime('');
-    revisionQuery.actions.setQueryError('');
-    revisionQuery.actions.setLoadingMore(false);
-    revisionQuery.actions.setSearchingDateTime(false);
-    revisionQuery.actions.setSwitching(false);
-    closeAllDialogs();
-  }, [closeAllDialogs, diffLoad.actions, resetDiffSessionToHome, revisionQuery.actions]);
+  }, [selectComparison]);
   const handleInitialVisualReady = useCallback(() => {
     if (startupRevealRequestedRef.current) return;
     startupRevealRequestedRef.current = true;
@@ -801,6 +790,8 @@ export default function App() {
   });
 
   useWorkbookViewEffects({
+    restoredNavigation: sessions.restoredNavigation,
+    guidedPulseNonce,
     navigationCount,
     setHunkIdx,
     workbookSections,
@@ -820,6 +811,8 @@ export default function App() {
   });
 
   useAppRuntimeEffects({
+    restoredNavigation: sessions.restoredNavigation,
+    onOpenComparison: sessions.openComparison,
     applyDiffData,
     displayFileName,
     hasLoadedDiff,
@@ -840,7 +833,6 @@ export default function App() {
     setTextLineSelectionSummary,
     activeWorkbookDiffRegion,
     activeWorkbookSheetName,
-    preparedWorkbookSectionsDelta: preparedWorkbookDelta?.sections ?? null,
     workbookCompareMode,
     workbookSectionRowIndex,
     workbookSections,
@@ -897,6 +889,17 @@ export default function App() {
             onDownloadUpdate={handleDownloadAppUpdate}
             onInstallUpdate={handleInstallDownloadedUpdate}
           />
+
+          {sessions.tabs.length > 0 && (
+            <ComparisonTabs
+              disabled={isLoadingDiff}
+              tabs={sessions.tabs}
+              activeId={sessions.activeId}
+              onSelect={sessions.selectComparison}
+              onClose={sessions.closeComparison}
+              onNew={handleReturnHome}
+            />
+          )}
 
           {hasLoadedDiff && !isLoadingDiff && (
             <DiffFilterToolbar
@@ -1018,6 +1021,7 @@ export default function App() {
           )}
 
           <AppContent
+            key={sessions.activeId ?? 'home'}
             lifecycle={{
               loadingLabel: t('appLoadingDiff'), loadPhase, hasLoadedDiff, loadError,
               isElectron, isLoadingDiff, suppressWorkbookTooltips: suppressTransientTooltips,
@@ -1046,6 +1050,7 @@ export default function App() {
               baseWorkbookMetadata,
               mineWorkbookMetadata,
               onWorkbookColumnWidthChange: handleWorkbookColumnWidthChange,
+              onWorkbookOperationError: diffLoad.actions.setError,
               workbookSections,
               workbookSectionRowIndex,
               workbookVisibilityModel,

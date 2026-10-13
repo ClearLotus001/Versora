@@ -178,8 +178,8 @@ const WorkbookFormulaBar = memo(({
     freezeState?.rowNumber ? t('formulaFreezeRows', { count: freezeState.rowNumber }) : '',
     freezeState?.colCount ? t('formulaFreezeCols', { count: freezeState.colCount }) : '',
   ].filter(Boolean).join(' · ') || t('formulaFreezeDefault');
-  const displayValue = primarySelection?.value || t('formulaBarEmptyValue');
-  const formulaValue = primarySelection?.formula || t('formulaBarEmpty');
+  const displayValue = primarySelection?.dataStatus === 'pending' ? t('workbookCellLoading') : primarySelection?.dataStatus === 'error' ? t('workbookCellLoadError') : primarySelection?.value || t('formulaBarEmptyValue');
+  const formulaValue = primarySelection?.dataStatus === 'pending' ? t('workbookCellLoading') : primarySelection?.dataStatus === 'error' ? t('workbookCellLoadError') : primarySelection?.formula || t('formulaBarEmpty');
   const valueFieldWidth = estimateFormulaValueFieldWidth(displayValue, sizes.ui);
 
   const ActionButton = ({

@@ -10,12 +10,13 @@ test('useAppSearchModel owns search orchestration outside the app view model', (
     'compileSearchPattern',
     'computeSearchMatchesAsync',
     'createSearchResultItemResolver',
-    'resolveWorkbookSearchMatchTarget',
     'navigateSearch',
   ]) {
     assert.match(searchModel, new RegExp(`\\b${responsibility}\\b`));
   }
 
   assert.match(appViewModel, /useAppSearchModel\(\{/);
+  assert.match(searchModel, /artifactProvider\.search\(/);
+  assert.match(searchModel, /artifactProvider\.cancelSearch\(/);
   assert.doesNotMatch(appViewModel, /computeSearchMatchesAsync|searchSeqRef|allSearchMatches/);
 });

@@ -79,6 +79,7 @@ interface AppContentWorkbookSurface {
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
   onWorkbookColumnWidthChange: (sheetName: string, column: number, nextWidth: number) => void;
+  onWorkbookOperationError: (message: string) => void;
   workbookSections: WorkbookSection[];
   workbookSectionRowIndex: WorkbookSectionRowIndex;
   workbookVisibilityModel: WorkbookVisibilityModel;
@@ -195,7 +196,7 @@ export default function AppContent({
     activeWorkbookDiffRegion, activeWorkbookTargetCell,
     onWorkbookSelectionRequest, onWorkbookNavigationReady,
     baseWorkbookMetadata, mineWorkbookMetadata,
-    onWorkbookColumnWidthChange,
+    onWorkbookColumnWidthChange, onWorkbookOperationError,
     workbookSections, workbookSectionRowIndex, workbookVisibilityModel,
     workbookCompareMode,
     activeWorkbookSharedExpandedBlocks, onWorkbookExpandedBlocksChange,
@@ -322,6 +323,7 @@ export default function AppContent({
                   freezeStateBySheet={workbookFreezeBySheet}
                   columnWidthBySheet={workbookColumnWidthBySheet}
                   onColumnWidthChange={onWorkbookColumnWidthChange}
+                  onOperationError={onWorkbookOperationError}
                   onRevealHiddenRows={handleRevealHiddenRows}
                   onRevealHiddenColumns={handleRevealHiddenColumns}
                   workbookSections={workbookSections}
@@ -364,6 +366,7 @@ export default function AppContent({
                   freezeStateBySheet={workbookFreezeBySheet}
                   columnWidthBySheet={workbookColumnWidthBySheet}
                   onColumnWidthChange={onWorkbookColumnWidthChange}
+                  onOperationError={onWorkbookOperationError}
                   onRevealHiddenRows={handleRevealHiddenRows}
                   onRevealHiddenColumns={handleRevealHiddenColumns}
                   workbookSections={workbookSections}

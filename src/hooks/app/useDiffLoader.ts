@@ -1,3 +1,4 @@
+import { activateWorkbookArtifact, clearActiveWorkbookArtifact, resolveWorkbookArtifactView } from '@/utils/workbook/workbookArtifactProvider';
 import { useCallback, useRef, type MutableRefObject } from 'react';
 
 import type {
@@ -7,7 +8,6 @@ import type {
   LocalFilePickSide,
   SvnDiffViewerScope,
   WorkbookCompareMode,
-  WorkbookMetadataSource,
 } from '@/types';
 import { EMPTY_COLLAPSE_EXPANSION_STATE, type CollapseExpansionState } from '@/utils/collapse/collapseState';
 import { buildDiffCacheKey, buildDiffSessionKey } from '@/utils/diff/diffCacheKey';
@@ -18,8 +18,6 @@ import { isWorkbookFileName, resolveDiffTexts } from '@/utils/diff/diffSource';
 import { computeTextDiffAsync, warmTextDiffWorker } from '@/utils/diff/computeTextDiffAsync';
 import { disposeTextSearchWorker } from '@/utils/diff/computeSearchMatchesAsync';
 import { createEmptyWorkbookLayoutSnapshots, type WorkbookLayoutSnapshotsByMode } from '@/utils/workbook/workbookLayoutState';
-import { resolveWorkbookMetadataAsync } from '@/utils/workbook/resolveWorkbookMetadataAsync';
-import { computeWorkbookDiffAsync } from '@/utils/workbook/computeWorkbookDiffAsync';
 import { clearWorkbookCanvasBitmapCache } from '@/utils/workbook/workbookCanvasBitmapCache';
 import { isWorkbookTextPair } from '@/engine/workbook/workbookDiff';
 import { recordPerfBridgeEvent } from '@/utils/app/perfBridge';
@@ -28,10 +26,6 @@ import {
   getNow,
   getPreparedDiffLinesForMode,
   getRevisionOptionsStatus,
-  hasBytePayload,
-  mergeWorkbookCompareModePayload,
-  mergeWorkbookMetadataPayload,
-  shouldResolveWorkbookMetadata,
   waitForNextPaint,
 } from '@/hooks/app/helpers';
 import type {
@@ -42,6 +36,8 @@ import type { DialogController, DiffLoadController, RevisionQueryController, Wor
 import { useAppStore } from '@/store/appStore';
 
 interface UseDiffLoaderArgs {
+  onOpenComparison: (data: DiffData) => void;
+  onBackgroundLineBlame: (data: DiffData, payload: import('@/types').LineBlamePayload) => void;
   loadSeqRef: MutableRefObject<number>;
   hasLoadedDiffRef: MutableRefObject<boolean>;
   workbookCompareModeRef: MutableRefObject<WorkbookCompareMode>;
@@ -68,6 +64,7 @@ export interface UseDiffLoaderResult {
       loadingAlreadyStarted?: boolean;
       compareMode?: WorkbookCompareMode;
       preserveWorkbookViewState?: boolean;
+      newComparison?: boolean;
     },
   ) => Promise<void>;
   handleWorkbookCompareModeChange: (nextMode: WorkbookCompareMode) => Promise<void>;
@@ -76,7 +73,8 @@ export interface UseDiffLoaderResult {
     side: LocalFilePickSide,
     requiredExtension?: string,
   ) => Promise<LocalDiffFilePickResult | null>;
-  handleCompareLocalFiles: (basePath: string, minePath: string) => Promise<boolean>;
+  handleCompareLocalFiles: (basePath: string, minePath: string, newComparison?: boolean) => Promise<boolean>;
+  handleSwapTwoFileDiff: () => Promise<void>;
   loadSvnDiffViewerStatus: () => Promise<void>;
   handleOpenSvnConfig: () => void;
   handleApplySvnDiffViewerScope: (scope: SvnDiffViewerScope) => Promise<void>;
@@ -85,6 +83,8 @@ export interface UseDiffLoaderResult {
 }
 
 export default function useDiffLoader({
+  onOpenComparison,
+  onBackgroundLineBlame,
   loadSeqRef,
   hasLoadedDiffRef,
   workbookCompareModeRef,
@@ -113,13 +113,13 @@ export default function useDiffLoader({
   const setApplyingSvnDiffViewerScope = useAppStore((s) => s.setApplyingSvnDiffViewerScope);
   const setIsRestoringSvnDiffViewerDefault = useAppStore((s) => s.setIsRestoringSvnDiffViewerDefault);
   const hydrateLoadedDiffSession = useAppStore((s) => s.hydrateLoadedDiffSession);
-  const hydrateWorkbookMetadataState = useAppStore((s) => s.hydrateWorkbookMetadataState);
 
   const { actions: dialogActions } = dialogs;
   const { actions: diffLoadActions } = diffLoad;
   const { actions: revisionActions } = revisionQuery;
   const workbookUiStateRef = useRef(workbookUi.state);
   const loadStartedAtBySeqRef = useRef(new Map<number, number>());
+  const cliReloadChainRef = useRef<Promise<void>>(Promise.resolve());
   workbookUiStateRef.current = workbookUi.state;
 
   const beginDiffLoad = useCallback(async () => {
@@ -182,8 +182,10 @@ export default function useDiffLoader({
       loadingAlreadyStarted?: boolean;
       compareMode?: WorkbookCompareMode;
       preserveWorkbookViewState?: boolean;
+      newComparison?: boolean;
     },
   ) => {
+    if (options?.newComparison) onOpenComparison(transportData);
     const seq = options?.seq ?? ++loadSeqRef.current;
     const applyStart = getNow();
     const compareMode = options?.compareMode ?? workbookCompareModeRef.current;
@@ -234,26 +236,6 @@ export default function useDiffLoader({
         : (data.perf?.diffMs ?? data.perf?.rustDiffMs ?? 0);
       let textResolveMs = 0;
       const cachedResult = diffResultCacheRef.current.get(cacheKey);
-      const metadataInput: WorkbookMetadataSource = {
-        baseName: data.baseName,
-        mineName: data.mineName,
-        fileName: data.fileName,
-        baseBytes: data.baseBytes,
-        mineBytes: data.mineBytes,
-      };
-      const hasMetadataFromPayload = data.baseWorkbookMetadata != null || data.mineWorkbookMetadata != null;
-      const canLoadMetadataRemotely = Boolean(window.versora?.loadWorkbookMetadata && isWorkbookFileName(data.fileName || data.baseName || data.mineName));
-      const canResolveMetadataLocally = shouldResolveWorkbookMetadata(metadataInput);
-      const shouldLoadMetadata = canResolveMetadataLocally || canLoadMetadataRemotely;
-      if (!canResolveMetadataLocally && (hasBytePayload(metadataInput.baseBytes) || hasBytePayload(metadataInput.mineBytes))) {
-        debugLog('metadata:skip-large-payload', {
-          compareMode,
-          fileName: data.fileName,
-          baseBytes: hasBytePayload(metadataInput.baseBytes) ? metadataInput.baseBytes.byteLength : 0,
-          mineBytes: hasBytePayload(metadataInput.mineBytes) ? metadataInput.mineBytes.byteLength : 0,
-        });
-      }
-
       const hydrateDiffSession = (
         nextData: DiffData,
         nextDiffLines: DiffLine[],
@@ -286,6 +268,7 @@ export default function useDiffLoader({
             ? { revisionSwitchableSides: nextData.revisionSwitchableSides }
             : {}),
         });
+        if (!nextData.workbookArtifact) clearActiveWorkbookArtifact();
         diffLoadActions.setLoaded(true);
         diffLoadActions.setPhase('ready');
       };
@@ -312,15 +295,20 @@ export default function useDiffLoader({
           ? bridge.loadTwoFileVersionLineBlame(
               data.baseRevisionInfo?.id ?? '',
               data.mineRevisionInfo?.id ?? '',
+              data.comparisonSessionId,
             )
           : isLocalFilePair
-          ? bridge.loadWorkingCopyLineBlame(data.basePath!, data.minePath!)
+          ? bridge.loadWorkingCopyLineBlame(data.basePath!, data.minePath!, data.comparisonSessionId)
           : bridge.loadLineBlame(
               data.baseRevisionInfo?.id,
               data.mineRevisionInfo?.id,
+              data.comparisonSessionId,
             );
         void blameTask.then((payload) => {
-          if (seq !== loadSeqRef.current) return;
+          if (seq !== loadSeqRef.current) {
+            onBackgroundLineBlame(data, payload);
+            return;
+          }
           setDiffLines(current => attachLineBlameToDiffLines(current, payload));
           debugLog('line-blame:loaded', {
             fileName: data.fileName,
@@ -336,86 +324,28 @@ export default function useDiffLoader({
         });
       };
 
-      const cachedMetadataAvailable = cachedResult?.baseWorkbookMetadata != null
-        || cachedResult?.mineWorkbookMetadata != null;
-      const metadataTask = !hasMetadataFromPayload && shouldLoadMetadata && !cachedMetadataAvailable
-        ? (async () => {
-            const metadataStart = getNow();
-            debugLog('metadata:request', {
-              compareMode,
-              fileName: data.fileName,
-            });
-            try {
-              const result = canLoadMetadataRemotely
-                ? await window.versora!.loadWorkbookMetadata(
-                    data.baseRevisionInfo?.id,
-                    data.mineRevisionInfo?.id,
-                  )
-                : await resolveWorkbookMetadataAsync(metadataInput);
-              return {
-                ok: true as const,
-                result,
-                duration: getNow() - metadataStart,
-              };
-            } catch (error) {
-              return {
-                ok: false as const,
-                error,
-                duration: getNow() - metadataStart,
-              };
-            }
-          })()
-        : null;
-      const scheduleMetadataTask = () => {
-        if (!metadataTask) return;
-        void metadataTask.then((metadataResult) => {
-          if (seq !== loadSeqRef.current) return;
-
-          if (!metadataResult.ok) {
-            const message = metadataResult.error instanceof Error
-              ? metadataResult.error.message
-              : String(metadataResult.error);
-            debugLog('metadata:failed', {
-              compareMode,
-              message,
-              durationMs: Number(metadataResult.duration.toFixed(1)),
-            });
-            diffLoadActions.setMetrics((prev) => (prev ? {
-              ...prev,
-              metadataMs: metadataResult.duration,
-            } : prev));
-            return;
-          }
-
-          hydrateWorkbookMetadataState({
-            baseWorkbookMetadata: metadataResult.result.base,
-            mineWorkbookMetadata: metadataResult.result.mine,
-          });
-          if (currentDiffDataRef.current) {
-            currentDiffDataRef.current = mergeWorkbookMetadataPayload(
-              currentDiffDataRef.current,
-              metadataResult.result,
-            );
-          }
-          const cachedEntry = diffResultCacheRef.current.get(cacheKey);
-          if (cachedEntry) {
-            rememberCachedDiffResult(diffResultCacheRef.current, cacheKey, buildCachedDiffResult({
-              ...cachedEntry,
-              baseWorkbookMetadata: metadataResult.result.base,
-              mineWorkbookMetadata: metadataResult.result.mine,
-            }));
-          }
-          diffLoadActions.setMetrics((prev) => (prev ? {
-            ...prev,
-            metadataMs: metadataResult.duration,
-          } : prev));
-          debugLog('metadata:loaded', {
-            compareMode,
-            durationMs: Number(metadataResult.duration.toFixed(1)),
-          });
-        });
-      };
-
+      if (data.workbookArtifact) {
+        const descriptor = data.workbookArtifact.compareMode === compareMode ? data.workbookArtifact
+          : await resolveWorkbookArtifactView({ artifactId: data.workbookArtifact.artifactId, compareMode });
+        if (seq !== loadSeqRef.current) return;
+        const nextData = { ...data, workbookArtifact: descriptor,
+          baseWorkbookMetadata: descriptor.baseMetadata, mineWorkbookMetadata: descriptor.mineMetadata };
+        activateWorkbookArtifact(descriptor);
+        hydrateDiffSession(nextData, [], descriptor.baseMetadata, descriptor.mineMetadata);
+        const rendererApplyMs = getNow() - applyStart;
+        const requestStartedAt = loadStartedAtBySeqRef.current.get(seq);
+        const requestToCommitMs = requestStartedAt == null ? null : getNow() - requestStartedAt;
+        diffLoadActions.setMetrics({ source: data.perf?.source ?? 'cli', ...data.perf,
+          rendererApplyMs, diffLineCount: descriptor.rows.kinds.length,
+          ...(requestToCommitMs != null ? { requestToCommitMs } : {}) });
+        recordPerfBridgeEvent('apply-diff-data:commit', { seq, compareMode, fileName: data.fileName,
+          artifactId: descriptor.artifactId, displayRows: descriptor.rows.kinds.length, rendererApplyMs, requestToCommitMs });
+        return;
+      }
+      if (isWorkbookFileName(data.fileName || data.baseName || data.mineName)
+        || (typeof data.baseContent === 'string' && typeof data.mineContent === 'string' && isWorkbookTextPair(data.baseContent, data.mineContent))) {
+        throw new Error('Workbook comparison artifact is missing. Please reload the comparison.');
+      }
       const cachedDiffLines = shouldUsePreparedDiff
         ? preparedDiffLines
         : (cachedResult?.diffLines ?? null);
@@ -461,7 +391,6 @@ export default function useDiffLoader({
           requestToCommitMs: requestToCommitMs == null ? null : Number(requestToCommitMs.toFixed(1)),
           perf: data.perf ?? null,
         });
-        scheduleMetadataTask();
         scheduleLineBlameTask();
         return;
       }
@@ -472,35 +401,12 @@ export default function useDiffLoader({
         nextDiffLines = preparedDiffLines!;
         diffDuration = preparedDiffDuration;
       } else {
-        const shouldUseWorkbookDiff = isWorkbookFileName(data.fileName || data.baseName || data.mineName)
-          || (
-            typeof data.baseContent === 'string'
-            && typeof data.mineContent === 'string'
-            && isWorkbookTextPair(data.baseContent, data.mineContent)
-          );
-
-        if (shouldUseWorkbookDiff) {
-          const workbookDiffResult = await computeWorkbookDiffAsync({
-            baseName: data.baseName,
-            mineName: data.mineName,
-            fileName: data.fileName,
-            baseContent: data.baseContent,
-            mineContent: data.mineContent,
-            baseBytes: data.baseBytes,
-            mineBytes: data.mineBytes,
-            compareMode,
-          });
-          nextDiffLines = workbookDiffResult.diffLines;
-          textResolveMs = workbookDiffResult.textResolveMs;
-          diffDuration = workbookDiffResult.diffMs;
-        } else {
-          const textStart = getNow();
-          const { baseText, mineText } = resolveDiffTexts(data);
-          textResolveMs = getNow() - textStart;
-          const diffStart = getNow();
-          nextDiffLines = await computeTextDiffAsync(baseText, mineText);
-          diffDuration = getNow() - diffStart;
-        }
+        const textStart = getNow();
+        const { baseText, mineText } = resolveDiffTexts(data);
+        textResolveMs = getNow() - textStart;
+        const diffStart = getNow();
+        nextDiffLines = await computeTextDiffAsync(baseText, mineText);
+        diffDuration = getNow() - diffStart;
       }
       if (seq !== loadSeqRef.current) return;
       hydrateDiffSession(
@@ -548,7 +454,6 @@ export default function useDiffLoader({
         baseWorkbookMetadata: data.baseWorkbookMetadata ?? null,
         mineWorkbookMetadata: data.mineWorkbookMetadata ?? null,
       }));
-      scheduleMetadataTask();
       scheduleLineBlameTask();
     } catch (error) {
       if (seq !== loadSeqRef.current) return;
@@ -574,10 +479,11 @@ export default function useDiffLoader({
     }
   }, [
     currentDiffDataRef,
+    onOpenComparison,
+    onBackgroundLineBlame,
     diffLoadActions,
     diffResultCacheRef,
     hydrateLoadedDiffSession,
-    hydrateWorkbookMetadataState,
     hasLoadedDiffRef,
     loadSeqRef,
     resetRevisionUiStateForDiff,
@@ -589,66 +495,6 @@ export default function useDiffLoader({
     setWorkbookArtifactDiff,
     workbookCompareModeRef,
   ]);
-
-  const ensureWorkbookCompareModeLoaded = useCallback(async (
-    data: DiffData,
-    compareMode: WorkbookCompareMode,
-  ): Promise<DiffData> => {
-    if (getPreparedDiffLinesForMode(data, compareMode)) {
-      recordPerfBridgeEvent('diff-payload:ready', {
-        reason: 'workbook-compare-mode',
-        compareMode,
-        source: 'snapshot',
-        fileName: data.fileName,
-      });
-      debugLog('ensure-compare-mode:cache-hit', {
-        compareMode,
-        fileName: data.fileName,
-      });
-      return data;
-    }
-    if (!window.versora?.loadWorkbookCompareMode) {
-      throw new Error(`Missing workbook compare mode payload for '${compareMode}'.`);
-    }
-
-    debugLog('ensure-compare-mode:request', {
-      compareMode,
-      fileName: data.fileName,
-      baseRevisionId: data.baseRevisionInfo?.id ?? null,
-      mineRevisionId: data.mineRevisionInfo?.id ?? null,
-    });
-    recordPerfBridgeEvent('diff-payload:request', {
-      reason: 'workbook-compare-mode',
-      compareMode,
-      fileName: data.fileName,
-      baseRevisionId: data.baseRevisionInfo?.id ?? null,
-      mineRevisionId: data.mineRevisionInfo?.id ?? null,
-    });
-    const payload = await window.versora.loadWorkbookCompareMode(
-      compareMode,
-      data.baseRevisionInfo?.id,
-      data.mineRevisionInfo?.id,
-    );
-    const payloadDiffLines = payload.analysisSnapshot?.workbookAnalysis?.diffLinesByMode[compareMode]
-      ?? null;
-    if (!payloadDiffLines) {
-      throw new Error(`Failed to load workbook compare mode '${compareMode}'.`);
-    }
-    debugLog('ensure-compare-mode:loaded', {
-      compareMode,
-      diffLineCount: payloadDiffLines.length,
-      rustDiffMs: payload.perf?.rustDiffMs ?? 0,
-    });
-    recordPerfBridgeEvent('diff-payload:ready', {
-      reason: 'workbook-compare-mode',
-      compareMode,
-      source: 'ipc',
-      fileName: data.fileName,
-      diffLineCount: payloadDiffLines.length,
-      rustDiffMs: payload.perf?.rustDiffMs ?? 0,
-    });
-    return mergeWorkbookCompareModePayload(data, payload);
-  }, []);
 
   const handleWorkbookCompareModeChange = useCallback(async (nextMode: WorkbookCompareMode) => {
     if (nextMode === workbookCompareModeRef.current) return;
@@ -667,39 +513,12 @@ export default function useDiffLoader({
       hasPreparedDiff: Boolean(getPreparedDiffLinesForMode(currentData, nextMode)),
     });
 
-    if (!isCurrentWorkbook || getPreparedDiffLinesForMode(currentData, nextMode)) {
-      void applyDiffData(currentData, {
-        compareMode: nextMode,
-        loadingAlreadyStarted: true,
-        preserveWorkbookViewState: isCurrentWorkbook,
-      });
-      return;
-    }
-
-    const seq = await beginDiffLoad();
-    try {
-      const nextData = await ensureWorkbookCompareModeLoaded(currentData, nextMode);
-      if (seq !== loadSeqRef.current) return;
-      await applyDiffData(nextData, {
-        seq,
-        compareMode: nextMode,
-        loadingAlreadyStarted: true,
-        preserveWorkbookViewState: true,
-      });
-    } catch (error) {
-      failDiffLoad(seq, error);
-    }
-  }, [
-    applyDiffData,
-    beginDiffLoad,
-    currentDiffDataRef,
-    ensureWorkbookCompareModeLoaded,
-    failDiffLoad,
-    loadSeqRef,
-    setWorkbookCompareMode,
-    workbookCompareModeRef,
-  ]);
-
+    await applyDiffData(currentData, {
+      compareMode: nextMode,
+      loadingAlreadyStarted: true,
+      preserveWorkbookViewState: isCurrentWorkbook,
+    });
+  }, [applyDiffData, currentDiffDataRef, setWorkbookCompareMode, workbookCompareModeRef]);
   const loadElectronWorkingCopyDiff = useCallback(async (filePath: string) => {
     if (!window.versora?.loadDevWorkingCopyDiff) return;
     const seq = await beginDiffLoad();
@@ -709,6 +528,7 @@ export default function useDiffLoader({
       await applyDiffData(nextData, {
         seq,
         loadingAlreadyStarted: true,
+        newComparison: true,
       });
     } catch (error) {
       failDiffLoad(seq, error);
@@ -738,26 +558,52 @@ export default function useDiffLoader({
   const handleCompareLocalFiles = useCallback(async (
     basePath: string,
     minePath: string,
+    newComparison = true,
   ) => {
     if (!window.versora?.loadLocalFileDiff) return false;
+    const comparisonSessionId = newComparison ? undefined : currentDiffDataRef.current?.comparisonSessionId;
+    const compareMode = workbookCompareModeRef.current;
     const seq = await beginDiffLoad();
+    if (seq !== loadSeqRef.current) return false;
     try {
       const nextData = await window.versora.loadLocalFileDiff(
         basePath,
         minePath,
-        workbookCompareModeRef.current,
+        compareMode,
+        comparisonSessionId,
       );
       if (seq !== loadSeqRef.current) return false;
       await applyDiffData(nextData, {
         seq,
         loadingAlreadyStarted: true,
+        newComparison,
       });
       return true;
     } catch (error) {
       failDiffLoad(seq, error);
       return false;
     }
-  }, [applyDiffData, beginDiffLoad, failDiffLoad, loadSeqRef, workbookCompareModeRef]);
+  }, [applyDiffData, beginDiffLoad, currentDiffDataRef, failDiffLoad, loadSeqRef, workbookCompareModeRef]);
+
+  const handleSwapTwoFileDiff = useCallback(async () => {
+    const currentData = currentDiffDataRef.current;
+    const bridge = window.versora;
+    if (!currentData || !bridge) return;
+    const seq = await beginDiffLoad();
+    if (seq !== loadSeqRef.current) return;
+    try {
+      const nextData = await bridge.swapTwoFileDiff(
+        currentData.baseRevisionInfo?.id ?? null,
+        currentData.mineRevisionInfo?.id ?? null,
+        workbookCompareModeRef.current,
+        currentData.comparisonSessionId,
+      );
+      if (seq !== loadSeqRef.current) return;
+      await applyDiffData(nextData, { seq, loadingAlreadyStarted: true });
+    } catch (error) {
+      failDiffLoad(seq, error);
+    }
+  }, [applyDiffData, beginDiffLoad, currentDiffDataRef, failDiffLoad, loadSeqRef, workbookCompareModeRef]);
 
   const loadSvnDiffViewerStatus = useCallback(async () => {
     if (!window.versora?.getSvnDiffViewerStatus) return;
@@ -806,19 +652,29 @@ export default function useDiffLoader({
     }
   }, [setIsRestoringSvnDiffViewerDefault, setSvnDiffViewerError, setSvnDiffViewerStatus]);
 
-  const reloadCliDiffData = useCallback(async () => {
-    if (!window.versora?.getDiffData) return;
-    const seq = await beginDiffLoad();
-    try {
-      const data = await window.versora.getDiffData(workbookCompareModeRef.current);
-      if (seq !== loadSeqRef.current) return;
-      await applyDiffData(data, {
-        seq,
-        loadingAlreadyStarted: true,
-      });
-    } catch (error) {
-      failDiffLoad(seq, error);
-    }
+  const reloadCliDiffData = useCallback(() => {
+    const task = cliReloadChainRef.current.then(async () => {
+      const rawBridge = window.versora;
+      if (!rawBridge?.getDiffData) return;
+      const bridge = rawBridge;
+      while (true) {
+        const context = await bridge.getLaunchContext();
+        if (!context.hasDiffRequest || context.pendingDiffRequestCount === 0) return;
+        const seq = await beginDiffLoad();
+        try {
+          const data = await bridge.getDiffData(workbookCompareModeRef.current);
+          if (seq !== loadSeqRef.current) return;
+          await applyDiffData(data, { seq, loadingAlreadyStarted: true, newComparison: true });
+        } catch (error) {
+          failDiffLoad(seq, error);
+        }
+        // Commit the active tab before taking the next session snapshot.
+        await waitForNextPaint();
+        if (context.pendingDiffRequestCount == null) return;
+      }
+    });
+    cliReloadChainRef.current = task.catch(() => undefined);
+    return task;
   }, [applyDiffData, beginDiffLoad, failDiffLoad, loadSeqRef, workbookCompareModeRef]);
 
   return {
@@ -829,6 +685,7 @@ export default function useDiffLoader({
     handlePickWorkingCopyFile,
     pickComparableFile,
     handleCompareLocalFiles,
+    handleSwapTwoFileDiff,
     loadSvnDiffViewerStatus,
     handleOpenSvnConfig,
     handleApplySvnDiffViewerScope,

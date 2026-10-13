@@ -295,6 +295,9 @@ export function buildWorkbookPatchOverlayBoxes({
   filterPatch,
   keyPrefix,
 }: BuildWorkbookPatchOverlayBoxesParams): WorkbookRegionOverlayBox[] {
+  if (region.artifactRegion) region = { ...region, patches: region.artifactRegion.provider.getClippedRegionPatches(
+    region.artifactRegion.index, visibleRows.map(([row]) => row), [...columnLayoutByColumn.keys()],
+  ) };
   return region.patches.flatMap((patch, patchIndex) => {
     if (filterPatch && !filterPatch(patch)) return [];
 

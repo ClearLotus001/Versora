@@ -1,6 +1,7 @@
 import type { DiffPerformanceMetrics, LayoutMode, WorkbookCompareMode } from '@/types';
 
 export interface PerfBridgeSnapshot {
+  workbookArtifact?: ReturnType<import('@/utils/workbook/workbookArtifactProvider').WorkbookArtifactProvider['getPerfSummary']>;
   hasLoadedDiff: boolean;
   isLoadingDiff: boolean;
   loadPhase: 'bootstrapping' | 'idle' | 'loading' | 'ready' | 'error';
@@ -30,6 +31,7 @@ export interface PerfBridgeEvent {
 }
 
 export interface PerfBridge {
+  readCells?(request: { sheetId: number; side: 'base' | 'mine'; rowNumber: number; column: number }): Promise<import('../../../shared/workbookArtifactProtocol').WorkbookArtifactCellsResult['cells'][number] | undefined>;
   getSnapshot(): PerfBridgeSnapshot;
   getEvents(): PerfBridgeEvent[];
   clearEvents(): void;

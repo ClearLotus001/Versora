@@ -267,6 +267,7 @@ const UnifiedPanel = memo(({
     onScrollerReady,
     activeSearchLineIdx,
     searchJumpNonce,
+    initialSearchJumpNonce: layoutSnapshot ? searchJumpNonce : undefined,
   });
   const selectionAccentColor = getManualLineSelectionAccent();
   const selectedCollapseSurfaces = useMemo(

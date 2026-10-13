@@ -111,9 +111,9 @@ function createSearchResultItem(
       || '',
     )
     : '';
-  const preview = parsedWorkbookLine
+  const preview = match.snippet ?? (parsedWorkbookLine
     ? workbookPreview || buildWorkbookLinePreview(parsedWorkbookLine)
-    : buildSearchSnippet(workbookContent || '', match.start, match.end);
+    : buildSearchSnippet(workbookContent || '', match.start, match.end));
   const detail = workbookTarget?.sheetName
     ? [
       workbookTarget.sheetName,

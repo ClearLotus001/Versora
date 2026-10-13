@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use std::thread;
 
 use crate::model::{
-    has_workbook_cell_content, normalize_field, DiffLineJson, WorkbookCellDeltaJson,
+    has_workbook_cell_content, normalize_field, DiffLineJson, RowSignature, WorkbookCellDeltaJson,
     WorkbookCellSnapshotJson, WorkbookDiffBothOutputJson, WorkbookDiffOutputJson,
     WorkbookDiffPerfJson, WorkbookMergeRange, WorkbookMetadataMap, WorkbookPrecomputedDeltaJson,
     WorkbookRowDeltaJson, WorkbookRowEntry, WorkbookSectionDeltaJson, WorkbookSheetDiffEntry,
@@ -31,7 +31,7 @@ enum MergeAwareCellRole {
     Covered,
 }
 
-struct MergeRangeIndex<'a> {
+pub(crate) struct MergeRangeIndex<'a> {
     ranges_by_row: HashMap<usize, Vec<&'a WorkbookMergeRange>>,
 }
 
@@ -42,14 +42,24 @@ impl<'a> MergeRangeIndex<'a> {
         }
     }
 
-    fn new(merge_ranges: &'a [WorkbookMergeRange], rows: &[WorkbookRowEntry]) -> Self {
-        if merge_ranges.is_empty() || rows.is_empty() {
+    pub(crate) fn new(merge_ranges: &'a [WorkbookMergeRange], rows: &[WorkbookRowEntry]) -> Self {
+        Self::from_row_numbers(
+            merge_ranges,
+            &rows.iter().map(|row| row.row_number).collect::<Vec<_>>(),
+        )
+    }
+
+    pub(crate) fn from_row_numbers(
+        merge_ranges: &'a [WorkbookMergeRange],
+        row_numbers: &[usize],
+    ) -> Self {
+        if merge_ranges.is_empty() || row_numbers.is_empty() {
             return Self {
                 ranges_by_row: HashMap::new(),
             };
         }
 
-        let mut row_numbers = rows.iter().map(|row| row.row_number).collect::<Vec<_>>();
+        let mut row_numbers = row_numbers.to_vec();
         row_numbers.sort_unstable();
         row_numbers.dedup();
 
@@ -87,7 +97,7 @@ impl<'a> MergeRangeIndex<'a> {
             .unwrap_or(&[])
     }
 
-    fn find(&self, row_number: usize, column: usize) -> Option<&'a WorkbookMergeRange> {
+    pub(crate) fn find(&self, row_number: usize, column: usize) -> Option<&'a WorkbookMergeRange> {
         self.ranges_for_row(row_number)
             .iter()
             .copied()
@@ -328,9 +338,9 @@ fn longest_increasing_row_pairs(candidates: &[(usize, usize)]) -> Vec<(usize, us
     result
 }
 
-fn unique_common_row_anchors(
-    base_rows: &[WorkbookRowEntry],
-    mine_rows: &[WorkbookRowEntry],
+fn unique_common_row_anchors<R: RowSignature>(
+    base_rows: &[R],
+    mine_rows: &[R],
     compare_mode: &str,
 ) -> Vec<(usize, usize)> {
     let mut base_counts: HashMap<&str, usize> = HashMap::new();
@@ -360,9 +370,9 @@ fn unique_common_row_anchors(
     longest_increasing_row_pairs(&candidates)
 }
 
-fn patience_lcs_middle(
-    base_rows: &[WorkbookRowEntry],
-    mine_rows: &[WorkbookRowEntry],
+fn patience_lcs_middle<R: RowSignature>(
+    base_rows: &[R],
+    mine_rows: &[R],
     compare_mode: &str,
 ) -> Vec<(usize, usize)> {
     if base_rows.is_empty() || mine_rows.is_empty() {
@@ -444,9 +454,9 @@ fn patience_lcs_middle(
     result
 }
 
-fn patience_lcs(
-    base_rows: &[WorkbookRowEntry],
-    mine_rows: &[WorkbookRowEntry],
+pub(crate) fn patience_lcs<R: RowSignature>(
+    base_rows: &[R],
+    mine_rows: &[R],
     compare_mode: &str,
 ) -> Vec<(usize, usize)> {
     if base_rows.is_empty() || mine_rows.is_empty() {
@@ -520,7 +530,7 @@ fn push_diff_line(
     });
 }
 
-fn build_workbook_row_delta_json(
+pub(crate) fn build_workbook_row_delta_json(
     base_row: Option<&WorkbookRowEntry>,
     mine_row: Option<&WorkbookRowEntry>,
     base_merge_index: &MergeRangeIndex<'_>,
@@ -1366,10 +1376,24 @@ fn prepare_workbook_comparison(
         }
 
         if !inspection_failed && !xml_different_common_sheet_names.is_empty() {
-            let base_inspections = base_context
-                .collect_text_sheet_inspections(Some(&xml_different_common_sheet_names));
-            let mine_fingerprints =
-                mine_context.collect_semantic_fingerprints(Some(&xml_different_common_sheet_names));
+            let (base_inspections, mine_fingerprints) = thread::scope(|scope| {
+                let base_handle = scope.spawn(|| {
+                    base_context
+                        .collect_text_sheet_inspections(Some(&xml_different_common_sheet_names))
+                });
+                let mine_handle = scope.spawn(|| {
+                    mine_context
+                        .collect_semantic_fingerprints(Some(&xml_different_common_sheet_names))
+                });
+                (
+                    base_handle.join().unwrap_or_else(|_| {
+                        Err(io::Error::other("Workbook base inspection thread panicked"))
+                    }),
+                    mine_handle.join().unwrap_or_else(|_| {
+                        Err(io::Error::other("Workbook mine inspection thread panicked"))
+                    }),
+                )
+            });
 
             match (base_inspections, mine_fingerprints) {
                 (Ok(base_inspections), Ok(mine_fingerprints)) => {
@@ -1607,19 +1631,29 @@ pub fn write_workbook_diff_outputs_stream<W: Write>(
         "content"
     };
     let primary = prepared.build_output(primary_mode);
+    let serialize_start = profile::start();
     serde_json::to_writer(&mut *writer, &primary)
         .map_err(|error| io::Error::other(error.to_string()))?;
     writer.write_all(b"\n")?;
     writer.flush()?;
+    profile::log_elapsed(
+        serialize_start,
+        format!("serialize_workbook_diff_output mode={primary_mode}"),
+    );
 
     // Let Electron clone and paint the primary payload before spending CPU on
     // the alternate mode. The parsed workbook remains in-process and is reused.
     thread::sleep(std::time::Duration::from_millis(STREAM_ALTERNATE_DELAY_MS));
     let alternate = prepared.build_output(alternate_mode);
+    let serialize_start = profile::start();
     serde_json::to_writer(&mut *writer, &alternate)
         .map_err(|error| io::Error::other(error.to_string()))?;
     writer.write_all(b"\n")?;
     writer.flush()?;
+    profile::log_elapsed(
+        serialize_start,
+        format!("serialize_workbook_diff_output mode={alternate_mode}"),
+    );
     profile::log_elapsed(
         total_start,
         format!("write_workbook_diff_outputs_stream primary={primary_mode}"),

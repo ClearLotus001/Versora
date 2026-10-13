@@ -34,6 +34,7 @@ interface UseResolvedTextLineNavigationParams<RowT extends { lineIdx: number }> 
   onScrollerReady?: ((scrollToIndex: (idx: number, align?: 'start' | 'center') => void) => void) | undefined;
   activeSearchLineIdx: number;
   searchJumpNonce: number;
+  initialSearchJumpNonce?: number | undefined;
 }
 
 interface UseResolvedTextLineNavigationResult {
@@ -55,8 +56,9 @@ export function useResolvedTextLineNavigation<RowT extends { lineIdx: number }>(
   onScrollerReady,
   activeSearchLineIdx,
   searchJumpNonce,
+  initialSearchJumpNonce,
 }: UseResolvedTextLineNavigationParams<RowT>): UseResolvedTextLineNavigationResult {
-  const completedSearchJumpNonceRef = useRef<number>(-1);
+  const completedSearchJumpNonceRef = useRef<number>(initialSearchJumpNonce ?? -1);
   const [pendingScrollTarget, setPendingScrollTarget] = useState<PendingScrollTarget | null>(null);
 
   const revealLineIfCollapsed = useCallback((lineIdx: number) => {

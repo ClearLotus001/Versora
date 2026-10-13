@@ -113,6 +113,24 @@ test('workbook canvas text diff uses a stronger fill and semantic edge', () => {
   );
   assert.deepEqual(
     resolveWorkbookCanvasTextDiffHighlight(theme, createCellDelta(' ', '', { strictOnly: true })),
-    { background: `${theme.searchHl}52`, edge: `${theme.searchHl}cc` },
+    { background: theme.whitespaceHl, edge: theme.whitespaceBrd },
   );
+});
+
+test('workbook canvas long replacements keep shared context and use whole changed spans', () => {
+  const diff = getWorkbookCanvasCellTextDiff(createCellDelta(
+    `ID:${'a'.repeat(1_900)}:end`,
+    `ID:${'b'.repeat(1_900)}:end`,
+  ));
+  assert.ok(diff);
+  assert.deepEqual(diff.baseSpans, [
+    { highlight: false, text: 'ID:' },
+    { highlight: true, text: 'a'.repeat(1_900) },
+    { highlight: false, text: ':end' },
+  ]);
+  assert.deepEqual(diff.mineSpans, [
+    { highlight: false, text: 'ID:' },
+    { highlight: true, text: 'b'.repeat(1_900) },
+    { highlight: false, text: ':end' },
+  ]);
 });

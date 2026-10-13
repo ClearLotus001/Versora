@@ -17,6 +17,6 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node"]
   },
-  "include": ["scripts/**/*.ts", "shared/**/*.ts"],
+  "include": ["scripts/**/*.ts", "scripts/**/*.mts", "shared/**/*.ts"],
   "exclude": ["node_modules", "dist", "dist-electron", "release"]
 }

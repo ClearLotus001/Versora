@@ -1,8 +1,10 @@
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { streamCommandToFile } from './streamCommandToFile.js';
 
 import { electronT } from '../i18n.js';
+import { getComparisonGitWorkingFileSession, setComparisonGitWorkingFileSession } from './state.js';
 import {
   DEFAULT_REVISION_QUERY_LIMIT,
   MAX_REVISION_QUERY_LIMIT,
@@ -45,7 +47,6 @@ export interface GitWorkingFileSession {
   tracked: boolean;
 }
 
-let activeGitWorkingFileSession: GitWorkingFileSession | null = null;
 const gitLineBlameCache = new Map<string, Promise<LineBlameLine[]>>();
 
 function toErrorMessage(stderr: Buffer, fallback: string): string {
@@ -326,7 +327,7 @@ export async function loadGitLineBlame(
   baseRevisionId?: string,
   mineRevisionId?: string,
 ): Promise<LineBlamePayload> {
-  const session = activeGitWorkingFileSession;
+  const session = getActiveGitWorkingFileSession();
   if (!session) return { base: [], mine: [] };
 
   const baseId = baseRevisionId?.trim() || session.headCommit || GIT_EMPTY_REVISION_ID;
@@ -339,11 +340,11 @@ export async function loadGitLineBlame(
 }
 
 export function clearActiveGitWorkingFileSession(): void {
-  activeGitWorkingFileSession = null;
+  setComparisonGitWorkingFileSession(null);
 }
 
 export function getActiveGitWorkingFileSession(): GitWorkingFileSession | null {
-  return activeGitWorkingFileSession;
+  return getComparisonGitWorkingFileSession();
 }
 
 export async function resolveGitWorkingFileSession(
@@ -418,9 +419,9 @@ export async function resolveGitWorkingFileSession(
 export async function activateGitWorkingFileSession(
   filePath: string,
 ): Promise<GitWorkingFileSession | null> {
-  activeGitWorkingFileSession = null;
+  setComparisonGitWorkingFileSession(null);
   const session = await resolveGitWorkingFileSession(filePath);
-  activeGitWorkingFileSession = session;
+  setComparisonGitWorkingFileSession(session);
   return session;
 }
 
@@ -452,6 +453,31 @@ export async function readGitFileRevision(
     `${commit}:${session.relativePath}`,
   ], { maxBytes: GIT_BLOB_MAX_BYTES });
   return result.stdout;
+}
+
+export async function writeGitFileRevision(
+  session: GitWorkingFileSession,
+  revisionId: string,
+  destination: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  if (revisionId === GIT_EMPTY_REVISION_ID) { await fs.promises.writeFile(destination, '', { flag: 'wx' }); return; }
+  if (isWorkingTreeRevision(revisionId)) {
+    const [repository, source] = await Promise.all([fs.promises.realpath(session.repositoryPath), fs.promises.realpath(session.workingFilePath)]);
+    if (!isPathInside(repository, source)) throw new Error('Refusing to read a working-tree file outside the repository.');
+    const before = await fs.promises.stat(source);
+    if (!before.isFile()) throw new Error('The selected working-copy item is not a regular file.');
+    await fs.promises.copyFile(source, destination, fs.constants.COPYFILE_EXCL);
+    const after = await fs.promises.stat(source);
+    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) throw new Error('The working-tree source changed while its snapshot was copied.');
+    signal?.throwIfAborted();
+    return;
+  }
+  const commit = await resolveCommit(session.repositoryPath, revisionId);
+  await streamCommandToFile('git', ['-C', session.repositoryPath, 'show', `${commit}:${session.relativePath}`], destination, {
+    ...(signal ? { signal } : {}), timeoutMs: GIT_COMMAND_TIMEOUT_MS,
+  });
 }
 
 export async function resolveGitRevisionInfo(
@@ -541,7 +567,7 @@ export async function queryGitRevisionOptionsForSession(
 export function queryGitRevisionOptions(
   query: RevisionOptionsQuery | undefined,
 ): Promise<RevisionOptionsPayload> {
-  return queryGitRevisionOptionsForSession(activeGitWorkingFileSession, query);
+  return queryGitRevisionOptionsForSession(getActiveGitWorkingFileSession(), query);
 }
 
 export async function getGitRevisionOptions(): Promise<SvnRevisionInfo[]> {

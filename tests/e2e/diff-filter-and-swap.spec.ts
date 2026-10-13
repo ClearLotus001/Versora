@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
+import type { PerfBridge } from '../../src/utils/app/perfBridge';
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.addInitScript(() => {
+  await page.addInitScript((emulateElectron) => {
     window.localStorage.setItem('versora.locale', 'en-US');
     window.localStorage.setItem('versora.settings', JSON.stringify({
       themeKey: 'light',
@@ -10,8 +11,10 @@ test.beforeEach(async ({ page }) => {
       diffTypeFilter: 'all',
       settingsSchemaVersion: 4,
     }));
-    window.versora = { getLaunchContext: () => new Promise(() => {}) } as NonNullable<typeof window.versora>;
-  });
+    if (emulateElectron) {
+      window.versora = { getLaunchContext: () => new Promise(() => {}) } as NonNullable<typeof window.versora>;
+    }
+  }, !testInfo.tags.includes('@browser'));
   await page.goto('/?__e2e=1');
   await page.waitForFunction(() => Boolean(window.__SVN_DIFF_E2E__));
 });
@@ -169,7 +172,7 @@ test('diff type buttons are disabled when their source type has no differences',
   await expect(page.getByTestId('diff-filter-delete')).toBeDisabled();
 });
 
-test('swap button exchanges the complete left and right comparison sides', async ({ page }) => {
+test('swap button exchanges the complete left and right comparison sides', { tag: '@browser' }, async ({ page }) => {
   await page.evaluate(async () => {
     await window.__SVN_DIFF_E2E__!.loadTextDiff({
       fileName: 'swap.txt',
@@ -218,4 +221,28 @@ test('swap button exchanges the complete left and right comparison sides', async
   await swapButton.click();
   await expect(leftHeader).toContainText('left-version.txt');
   await expect(rightHeader).toContainText('right-version.txt');
+});
+
+test('workbook swap exchanges canonical cells as well as the displayed names', { tag: '@browser' }, async ({ page }) => {
+  await page.goto('/?__e2e=1&__perf=1');
+  await page.waitForFunction(() => Boolean(window.__SVN_DIFF_E2E__ && '__SVN_DIFF_PERF__' in window));
+  await page.evaluate(async () => {
+    await window.__SVN_DIFF_E2E__!.loadWorkbookDiff({
+      fileName: 'swap.xlsx', baseName: 'left.xlsx', mineName: 'right.xlsx', layout: 'split-h', collapseCtx: false,
+      baseContent: '@@sheet\tSheet\n@@row\t1\tID\tValue\n@@row\t2\t1\tBefore',
+      mineContent: '@@sheet\tSheet\n@@row\t1\tID\tValue\n@@row\t2\t1\tAfter',
+    });
+  });
+  const read = (side: 'base' | 'mine') => page.evaluate(async (target) => {
+    const host = window as Window & { __SVN_DIFF_PERF__?: PerfBridge };
+    return (await host.__SVN_DIFF_PERF__!.readCells!({ sheetId: 0, side: target, rowNumber: 2, column: 1 }))?.value;
+  }, side);
+  await expect.poll(() => read('base')).toBe('Before');
+  await page.getByTestId('split-header-swap').click();
+  await expect(page.locator('[data-split-header-side="base"]')).toContainText('right.xlsx');
+  await expect.poll(() => read('base')).toBe('After');
+  await expect.poll(() => read('mine')).toBe('Before');
+  await page.getByTestId('split-header-swap').click();
+  await expect.poll(() => read('base')).toBe('Before');
+  await expect.poll(() => read('mine')).toBe('After');
 });

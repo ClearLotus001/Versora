@@ -26,14 +26,15 @@ test('Electron exposes one renderer bridge and one launch-data path', () => {
     assert.equal(source.includes(legacyLaunchMethod), false);
   }
   assert.equal(ipcSource.includes(legacyLaunchChannel), false);
-  assert.match(preloadSource, /releaseSessionResources: \(\) => ipcRenderer\.invoke\('release-session-resources'\)/);
-  assert.match(bridgeTypeSource, /releaseSessionResources\?\(\): Promise<void>/);
+  assert.match(preloadSource, /releaseSessionResources: \(comparisonSessionId\?: string\) => ipcRenderer\.invoke\('release-session-resources', \{ comparisonSessionId \}\)/);
+  assert.match(bridgeTypeSource, /releaseSessionResources\?\(comparisonSessionId\?: string\): Promise<void>/);
   assert.match(ipcSource, /safeHandle\('release-session-resources'/);
 
   const noDiffRequestGuard = lifecycleSource.indexOf('if (!launchContext.hasDiffRequest)');
   assert.ok(noDiffRequestGuard >= 0);
-  assert.ok(noDiffRequestGuard < lifecycleSource.indexOf("diffLoadActions.setPhase('loading')"));
-  assert.ok(noDiffRequestGuard < lifecycleSource.indexOf('bridge.getDiffData('));
+  assert.ok(noDiffRequestGuard < lifecycleSource.indexOf('await reloadCliDiffData()'));
+  assert.equal(lifecycleSource.includes('bridge.getDiffData('), false);
+  assert.equal(lifecycleSource.includes('++loadSeqRef.current'), false);
 
   const bootstrapBranch = appContentSource.slice(
     appContentSource.indexOf("if (!hasLoadedDiff && loadPhase === 'bootstrapping')"),

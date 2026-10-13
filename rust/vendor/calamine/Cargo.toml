@@ -1,0 +1,48 @@
+[package]
+name = "calamine"
+version = "0.31.0"
+authors = ["Johann Tuffe <tafia973@gmail.com>"]
+repository = "https://github.com/tafia/calamine"
+documentation = "https://docs.rs/calamine"
+description = "An Excel/OpenDocument Spreadsheet reader and deserializer in pure Rust"
+license = "MIT"
+readme = "README.md"
+keywords = ["excel", "ods", "xls", "xlsx", "xlsb"]
+categories = ["encoding", "parsing", "text-processing"]
+exclude = ["tests/**/*"]
+edition = "2021"
+rust-version = "1.83" # For quick-xml + encoding_rs.
+
+[dependencies]
+cfb = "=0.15.0"
+log = "0.4"
+serde = "1.0"
+codepage = "0.1.1"
+atoi_simd = "0.16"
+byteorder = "1.5"
+encoding_rs = "0.8"
+fast-float2 = "0.2"
+zip = { version = "4.2.0", default-features = false, features = ["deflate"] }
+quick-xml = { version = "0.38", features = ["encoding"] }
+
+# Optional dependencies.
+chrono = { version = "0.4", features = ["serde"], optional = true, default-features = false }
+
+[dev-dependencies]
+serde_derive = "1.0"
+
+[features]
+default = []
+
+# `chrono`: Adds support for Chrono dates and times.
+chrono = ["dep:chrono"]
+
+# `picture`: Adds support for reading raw data for pictures in spreadsheets.
+picture = []
+
+# `dates`: Backwards compatible synonym for the `chrono` feature.
+dates = ["chrono"]
+
+[package.metadata.docs.rs]
+features = ["chrono", "picture"]
+rustdoc-args = ["--cfg", "docsrs"]

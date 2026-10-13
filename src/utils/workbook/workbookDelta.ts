@@ -5,7 +5,6 @@ import type {
   WorkbookRowDelta,
   WorkbookRowMiniMapPaintTone,
   WorkbookRowMiniMapTone,
-  WorkbookRowDeltaPayload,
   WorkbookRowDeltaTone,
 } from '@/types';
 import type { WorkbookCellDisplay, WorkbookRowDisplayLine } from '@/utils/workbook/workbookDisplay';
@@ -19,13 +18,88 @@ import {
   resolveWorkbookMiniMapDescriptorFromDeltas,
   resolveWorkbookRowDeltaTone,
 } from '../../../shared/workbookCellSemantics';
-import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
+import { parseWorkbookDiffLine } from '@/utils/workbook/workbookDisplay';
 
 const EMPTY_CELL: WorkbookCellDisplay = { value: '', formula: '' };
 const NULL_LINE_CACHE_KEY: object = {};
 const rowDeltaCache = new WeakMap<object, WeakMap<object, Map<string, WorkbookRowDelta>>>();
 const splitRowSubsetDeltaCache = new WeakMap<object, Map<string, WorkbookRowDelta>>();
-const EMPTY_CELL_DELTA_MAP = new Map<number, WorkbookCellDelta>();
+
+// Offscreen unchanged rows need their summary during preparation, but their
+// cell maps are only needed when drawing, selecting, or iterating their cells.
+class DeferredWorkbookCellMap extends Map<number, WorkbookCellDelta> {
+  #initialize: (() => Iterable<readonly [number, WorkbookCellDelta]>) | null;
+
+  constructor(initialize: () => Iterable<readonly [number, WorkbookCellDelta]>) {
+    super();
+    this.#initialize = initialize;
+  }
+
+  private ensureInitialized() {
+    const initialize = this.#initialize;
+    if (!initialize) return;
+    this.#initialize = null;
+    for (const [column, delta] of initialize()) super.set(column, delta);
+  }
+
+  override get size() { this.ensureInitialized(); return super.size; }
+  override get(column: number) { this.ensureInitialized(); return super.get(column); }
+  override has(column: number) { this.ensureInitialized(); return super.has(column); }
+  override set(column: number, delta: WorkbookCellDelta): this { this.ensureInitialized(); return super.set(column, delta); }
+  override delete(column: number) { this.ensureInitialized(); return super.delete(column); }
+  override clear() { this.#initialize = null; super.clear(); }
+  override entries() { this.ensureInitialized(); return super.entries(); }
+  override keys() { this.ensureInitialized(); return super.keys(); }
+  override values() { this.ensureInitialized(); return super.values(); }
+  override [Symbol.iterator]() { return this.entries(); }
+  override forEach(callback: (value: WorkbookCellDelta, key: number, map: Map<number, WorkbookCellDelta>) => void, thisArg?: unknown) {
+    this.ensureInitialized();
+    super.forEach(callback, thisArg);
+  }
+}
+
+function createEqualWorkbookRowDelta(
+  initializeCells: () => Iterable<readonly [number, WorkbookCellDelta]>,
+): WorkbookRowDelta {
+  return {
+    cellDeltas: new DeferredWorkbookCellMap(initializeCells),
+    changedColumns: [],
+    strictOnlyColumns: [],
+    changedCount: 0,
+    hasChanges: false,
+    tone: 'equal',
+    miniMapTone: 'equal',
+    miniMapPaintTones: [],
+  };
+}
+
+function* buildEqualWorkbookCellEntries(
+  line: DiffLine,
+  columns: number[] | undefined,
+  compareMode: WorkbookCompareMode,
+): IterableIterator<[number, WorkbookCellDelta]> {
+  const row = parseWorkbookRowLine(line);
+  if (!row) return;
+  const columnSet = columns && columns.length > 0
+    ? columns
+    : row.cells.map((_, index) => index);
+  for (const column of columnSet) {
+    const cell = row.cells[column] ?? EMPTY_CELL;
+    if (!hasWorkbookCellContent(cell, compareMode)) continue;
+    yield [column, {
+      column,
+      baseCell: cell,
+      mineCell: cell,
+      changed: false,
+      masked: true,
+      strictOnly: false,
+      kind: 'equal',
+      hasBaseContent: true,
+      hasMineContent: true,
+      hasContent: true,
+    }];
+  }
+}
 
 interface WorkbookRowDeltaSummary {
   changedColumns: number[];
@@ -39,7 +113,7 @@ interface WorkbookRowDeltaSummary {
 
 export function parseWorkbookRowLine(line: DiffLine | null): WorkbookRowDisplayLine | null {
   if (!line) return null;
-  const parsed = parseWorkbookDisplayLine(line.base ?? line.mine ?? '');
+  const parsed = parseWorkbookDiffLine(line);
   return parsed?.kind === 'row' ? parsed : null;
 }
 
@@ -92,6 +166,17 @@ export function buildWorkbookRowDelta(
 
   const cached = columnsCache.get(columnsKey);
   if (cached) return cached;
+
+  if (
+    leftLine && rightLine
+    && (leftLine.base ?? leftLine.mine) === (rightLine.base ?? rightLine.mine)
+  ) {
+    const equal = createEqualWorkbookRowDelta(
+      () => buildEqualWorkbookCellEntries(leftLine, columns, compareMode),
+    );
+    columnsCache.set(columnsKey, equal);
+    return equal;
+  }
 
   const leftRow = parseWorkbookRowLine(leftLine);
   const rightRow = parseWorkbookRowLine(rightLine);
@@ -185,35 +270,6 @@ export function buildWorkbookRowDelta(
   return rowDelta;
 }
 
-export function hydrateWorkbookRowDelta(payload: WorkbookRowDeltaPayload): WorkbookRowDelta {
-  const fallbackSummary = (
-    payload.miniMapTone != null
-    && Array.isArray(payload.miniMapPaintTones)
-  )
-    ? null
-    : summarizeWorkbookCellDeltas(payload.cellDeltas);
-  let hydratedCellDeltas: Map<number, WorkbookCellDelta> | null = null;
-  return {
-    get cellDeltas() {
-      if (!hydratedCellDeltas) {
-        hydratedCellDeltas = payload.cellDeltas.length > 0
-          ? new Map<number, WorkbookCellDelta>(payload.cellDeltas.map((delta) => [delta.column, delta]))
-          : EMPTY_CELL_DELTA_MAP;
-      }
-      return hydratedCellDeltas;
-    },
-    cellDeltaPayloads: payload.cellDeltas,
-    changedColumns: payload.changedColumns,
-    strictOnlyColumns: payload.strictOnlyColumns,
-    changedCount: payload.changedCount,
-    hasChanges: payload.hasChanges,
-    tone: payload.tone,
-    miniMapTone: payload.miniMapTone ?? fallbackSummary?.miniMapTone ?? 'equal',
-    miniMapPaintTones: payload.miniMapPaintTones ?? fallbackSummary?.miniMapPaintTones ?? [],
-    ...(payload.structuralChange ? { structuralChange: payload.structuralChange } : {}),
-  };
-}
-
 export function getWorkbookRowMiniMapDescriptor(
   rowDelta: WorkbookRowDelta,
 ): { tone: WorkbookRowMiniMapTone; tones: WorkbookRowMiniMapPaintTone[] } {
@@ -230,12 +286,6 @@ export function getWorkbookRowDeltaEntries(
   rowDelta: WorkbookRowDelta,
   columns?: readonly number[],
 ): readonly WorkbookCellDelta[] {
-  const payloadCellDeltas = rowDelta.cellDeltaPayloads;
-  if (payloadCellDeltas) {
-    if (!columns || columns.length === 0) return payloadCellDeltas;
-    const selectedColumns = new Set(columns);
-    return payloadCellDeltas.filter((delta) => selectedColumns.has(delta.column));
-  }
   if (!columns || columns.length === 0) {
     return [...rowDelta.cellDeltas.values()];
   }
@@ -253,6 +303,7 @@ export function buildWorkbookSplitRowDelta(
   compareMode: WorkbookCompareMode = 'strict',
 ): WorkbookRowDelta {
   const precomputed = row.workbookRowDelta;
+  if (precomputed?.artifactSummary) return precomputed;
   if (!precomputed) {
     return buildWorkbookRowDelta(row.left, row.right, columns, compareMode);
   }
@@ -268,6 +319,14 @@ export function buildWorkbookSplitRowDelta(
 
   const cachedSubset = subsetCache.get(subsetCacheKey);
   if (cachedSubset) return cachedSubset;
+
+  if (!precomputed.hasChanges) {
+    const equalSubset = createEqualWorkbookRowDelta(() => (
+      getWorkbookRowDeltaEntries(precomputed, columns).map((delta) => [delta.column, delta] as const)
+    ));
+    subsetCache.set(subsetCacheKey, equalSubset);
+    return equalSubset;
+  }
 
   const deltas = getWorkbookRowDeltaEntries(precomputed, columns);
   const nextCellDeltas = new Map<number, WorkbookCellDelta>(

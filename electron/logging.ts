@@ -11,7 +11,7 @@ function isMainDebugLoggingEnabled(): boolean {
 function emitMainLog(level: MainConsoleLogLevel, scope: string, values: unknown[]): void {
   if (level === 'debug' && !isMainDebugLoggingEnabled()) return;
 
-  const consoleMethod = console[level] ?? console.log;
+  const consoleMethod = (console[level] ?? console.log).bind(console);
   const prefix = `[${scope}]`;
   if (values.length === 0) {
     consoleMethod(prefix);

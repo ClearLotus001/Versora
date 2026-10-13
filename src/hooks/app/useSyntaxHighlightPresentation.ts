@@ -4,7 +4,7 @@ import type { DiffData, SyntaxPresentation } from '@/types';
 import type { ThemeKey } from '@/theme';
 import { computeSyntaxTokensAsync } from '@/utils/diff/computeSyntaxTokensAsync';
 import { detectSyntaxLanguage } from '@/utils/diff/detectSyntaxLanguage';
-import { resolveDiffTexts } from '@/utils/diff/diffSource';
+import { isWorkbookFileName, resolveDiffTexts } from '@/utils/diff/diffSource';
 import { isSupportedShikiLanguage } from '@/utils/diff/shikiSupportedLanguages';
 import {
   resolveShikiTheme,
@@ -25,7 +25,11 @@ export default function useSyntaxHighlightPresentation({
   const [presentation, setPresentation] = useState<SyntaxPresentation | null>(null);
 
   const syntaxInput = useMemo(() => {
-    if (!currentDiffData || isWorkbookMode) return null;
+    if (
+      !currentDiffData
+      || isWorkbookMode
+      || [currentDiffData.fileName, currentDiffData.baseName, currentDiffData.mineName].some(isWorkbookFileName)
+    ) return null;
 
     const { baseText, mineText } = resolveDiffTexts(currentDiffData);
     const languageId = detectSyntaxLanguage(

@@ -24,7 +24,7 @@ export default function WorkbookCompareShell({
   sheetTabs,
 }: WorkbookCompareShellProps) {
   return (
-    <div className="flex-1 flex flex-col overflow-hidden min-w-0 min-h-0">
+    <div className="flex-1 flex flex-col overflow-hidden min-w-0 min-h-0 bg-workbook-canvas-bg">
       {perfPanel}
       {mergeNotice}
       {frozenOverflowBar}

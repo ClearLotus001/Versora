@@ -15,7 +15,7 @@ export interface WorkbookCellDeltaLike {
   strictOnly?: boolean;
 }
 
-export function normalizeWorkbookCellValueForMode(
+function normalizeWorkbookCellValueForMode(
   value: string,
   compareMode: SharedWorkbookCompareMode = 'strict',
 ): string {

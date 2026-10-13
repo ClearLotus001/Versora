@@ -1,3 +1,4 @@
+import { getActiveWorkbookArtifactProvider } from '@/utils/workbook/workbookArtifactProvider';
 import {
   useEffect,
   useRef,
@@ -14,7 +15,6 @@ import type {
   TextLineSelectionSummary,
   WorkbookCompareMode,
   WorkbookDiffRegion,
-  WorkbookSectionDeltaPayload,
 } from '@/types';
 import type { LoadPhase } from '@/hooks/app/types';
 import { debugLog } from '@/hooks/app/helpers';
@@ -29,7 +29,7 @@ import {
   recordPerfBridgeEvent,
   shouldEnablePerfBridge,
 } from '@/utils/app/perfBridge';
-import { parseWorkbookRowLine } from '@/utils/workbook/workbookCompare';
+import { getWorkbookSideRowNumber } from '@/utils/workbook/workbookNavigation';
 import type { WorkbookSectionRowIndex } from '@/utils/workbook/workbookSheetIndex';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import {
@@ -38,6 +38,8 @@ import {
 } from '@/utils/workbook/workbookDebug';
 
 interface UseAppRuntimeEffectsArgs {
+  restoredNavigation: { searchJumpNonce: number; activeSearchIdx: number } | null;
+  onOpenComparison: (data: DiffData) => void;
   applyDiffData: (data: DiffData) => Promise<void>;
   displayFileName: string;
   hasLoadedDiff: boolean;
@@ -58,13 +60,14 @@ interface UseAppRuntimeEffectsArgs {
   setTextLineSelectionSummary: Dispatch<SetStateAction<TextLineSelectionSummary | null>>;
   activeWorkbookDiffRegion: WorkbookDiffRegion | null;
   activeWorkbookSheetName: string | null;
-  preparedWorkbookSectionsDelta: WorkbookSectionDeltaPayload[] | null;
   workbookCompareMode: WorkbookCompareMode;
   workbookSectionRowIndex: WorkbookSectionRowIndex;
   workbookSections: WorkbookSection[];
 }
 
 export default function useAppRuntimeEffects({
+  restoredNavigation,
+  onOpenComparison,
   applyDiffData,
   displayFileName,
   hasLoadedDiff,
@@ -85,11 +88,11 @@ export default function useAppRuntimeEffects({
   setTextLineSelectionSummary,
   activeWorkbookDiffRegion,
   activeWorkbookSheetName,
-  preparedWorkbookSectionsDelta,
   workbookCompareMode,
   workbookSectionRowIndex,
   workbookSections,
 }: UseAppRuntimeEffectsArgs) {
+  const activeArtifactProvider = getActiveWorkbookArtifactProvider();
   const perfViewReadyTokenRef = useRef(0);
   const perfLastReadySignatureRef = useRef('');
 
@@ -115,15 +118,19 @@ export default function useAppRuntimeEffects({
 
     window.__SVN_DIFF_E2E__ = {
       loadTextDiff: async (payload) => {
+        const data = buildE2EDiffData(payload);
+        onOpenComparison(data);
         if (payload.layout) setLayout(payload.layout);
         if (typeof payload.collapseCtx === 'boolean') setCollapseCtx(payload.collapseCtx);
-        await applyDiffData(buildE2EDiffData(payload));
+        await applyDiffData(data);
       },
       loadWorkbookDiff: async (payload) => {
+        const data = buildE2EWorkbookDiffData(payload);
+        onOpenComparison(data);
         if (payload.layout) setLayout(payload.layout);
         if (typeof payload.collapseCtx === 'boolean') setCollapseCtx(payload.collapseCtx);
         setShowOnlyDifferences(payload.showOnlyDifferences ?? false);
-        await applyDiffData(buildE2EWorkbookDiffData(payload));
+        await applyDiffData(data);
       },
       getSnapshot: () => ({
         hasLoadedDiff,
@@ -138,6 +145,7 @@ export default function useAppRuntimeEffects({
     };
   }, [
     applyDiffData,
+    onOpenComparison,
     displayFileName,
     hasLoadedDiff,
     isWorkbookMode,
@@ -162,7 +170,13 @@ export default function useAppRuntimeEffects({
         activeWorkbookSheetName,
         viewReadyToken: perfViewReadyTokenRef.current,
         loadPerfMetrics,
+        ...(getActiveWorkbookArtifactProvider() ? { workbookArtifact: getActiveWorkbookArtifactProvider()!.getPerfSummary() } : {}),
       }),
+      readCells: async (request) => {
+        const provider = getActiveWorkbookArtifactProvider();
+        if (!provider) throw new Error('No active workbook artifact');
+        return provider.readCell(request);
+      },
       getEvents: () => getPerfBridgeEvents(),
       clearEvents: () => clearPerfBridgeEvents(),
     };
@@ -185,8 +199,8 @@ export default function useAppRuntimeEffects({
   useEffect(() => {
     if (!shouldEnablePerfBridge()) return undefined;
     if (!hasLoadedDiff || isLoadingDiff || loadPhase !== 'ready') return undefined;
-
     const readySignature = JSON.stringify({
+      artifactId: activeArtifactProvider?.descriptor.artifactId,
       fileName: displayFileName,
       layout,
       isWorkbookMode,
@@ -198,9 +212,21 @@ export default function useAppRuntimeEffects({
     }
 
     let cancelled = false;
-    const firstFrameId = requestAnimationFrame(() => {
-      const secondFrameId = requestAnimationFrame(() => {
-        if (cancelled) return;
+    let firstFrameId = 0;
+    let secondFrameId = 0;
+    const isArtifactReady = () => {
+      if (!isWorkbookMode || !activeArtifactProvider || activeArtifactProvider.descriptor.rows.kinds.length === 0) return true;
+      const cache = activeArtifactProvider.getCacheStats();
+      return cache.windows > 0 && cache.pending === 0 && activeArtifactProvider.getErrorCount() === 0;
+    };
+    const scheduleReady = () => {
+      cancelAnimationFrame(firstFrameId);
+      cancelAnimationFrame(secondFrameId);
+      if (cancelled || !isArtifactReady() || perfLastReadySignatureRef.current === readySignature) return;
+      const revision = activeArtifactProvider?.getSnapshot();
+      firstFrameId = requestAnimationFrame(() => {
+        secondFrameId = requestAnimationFrame(() => {
+        if (cancelled || !isArtifactReady() || activeArtifactProvider?.getSnapshot() !== revision) return;
         perfLastReadySignatureRef.current = readySignature;
         perfViewReadyTokenRef.current += 1;
         debugLog('view-ready', {
@@ -219,16 +245,18 @@ export default function useAppRuntimeEffects({
           activeWorkbookSheetName,
           viewReadyToken: perfViewReadyTokenRef.current,
         });
+        });
       });
-
-      if (cancelled) {
-        cancelAnimationFrame(secondFrameId);
-      }
-    });
+    };
+    // Cache notifications schedule readiness directly; they do not rerender the whole App.
+    const unsubscribe = activeArtifactProvider?.subscribe(scheduleReady);
+    scheduleReady();
 
     return () => {
       cancelled = true;
       cancelAnimationFrame(firstFrameId);
+      cancelAnimationFrame(secondFrameId);
+      unsubscribe?.();
     };
   }, [
     activeWorkbookSheetName,
@@ -239,10 +267,12 @@ export default function useAppRuntimeEffects({
     layout,
     loadPhase,
     workbookCompareMode,
+    activeArtifactProvider,
   ]);
 
   useEffect(() => {
     if (isWorkbookMode) return;
+    if (restoredNavigation?.searchJumpNonce === searchJumpNonce && restoredNavigation.activeSearchIdx === activeSearchIdx) return;
     if (activeSearchIdx < 0) return;
     const activeSearchMatch = searchMatches[activeSearchIdx] ?? null;
     if (!activeSearchMatch) return;
@@ -252,7 +282,7 @@ export default function useAppRuntimeEffects({
     });
 
     return () => cancelAnimationFrame(rafId);
-  }, [activeSearchIdx, isWorkbookMode, scrollToIndexRef, searchJumpNonce, searchMatches]);
+  }, [activeSearchIdx, isWorkbookMode, restoredNavigation, scrollToIndexRef, searchJumpNonce, searchMatches]);
 
   useEffect(() => {
     setWorkbookDebugEnabled(isDevMode);
@@ -264,24 +294,18 @@ export default function useAppRuntimeEffects({
     if (!activeSheetName) return;
 
     const activeSectionRows = workbookSectionRowIndex.get(activeSheetName)?.rows ?? [];
-    const activePayloadSection = preparedWorkbookSectionsDelta?.find(
-      (section) => section.name === activeSheetName,
-    ) ?? null;
-
     workbookDebugLog('app/workbook-sheet-state', {
       activeSheetName,
       compareMode: workbookCompareMode,
       sectionCount: workbookSections.length,
-      payloadSectionCount: preparedWorkbookSectionsDelta?.length ?? 0,
-      activePayloadRowCount: activePayloadSection?.rows.length ?? 0,
       activeSectionRowCount: activeSectionRows.length,
       activeSectionPreview: activeSectionRows.slice(0, 8).map((row) => ({
         lineIdx: row.lineIdx,
         lineIdxs: row.lineIdxs,
-        leftRowNumber: parseWorkbookRowLine(row.left)?.rowNumber ?? null,
-        rightRowNumber: parseWorkbookRowLine(row.right)?.rowNumber ?? null,
-        leftColumnCount: parseWorkbookRowLine(row.left)?.cells.length ?? 0,
-        rightColumnCount: parseWorkbookRowLine(row.right)?.cells.length ?? 0,
+        leftRowNumber: getWorkbookSideRowNumber(row, 'base'),
+        rightRowNumber: getWorkbookSideRowNumber(row, 'mine'),
+        leftColumnCount: row.workbookArtifactRow?.provider.descriptor.rows.baseColumnCounts[row.lineIdx] ?? 0,
+        rightColumnCount: row.workbookArtifactRow?.provider.descriptor.rows.mineColumnCounts[row.lineIdx] ?? 0,
         changedColumns: row.workbookRowDelta?.changedColumns ?? [],
       })),
       workbookSections: workbookSections.map((section) => ({
@@ -307,8 +331,7 @@ export default function useAppRuntimeEffects({
     activeWorkbookSheetName,
     isDevMode,
     isWorkbookMode,
-    preparedWorkbookSectionsDelta,
-    workbookCompareMode,
+      workbookCompareMode,
     workbookSectionRowIndex,
     workbookSections,
   ]);

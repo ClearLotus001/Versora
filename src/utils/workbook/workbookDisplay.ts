@@ -22,6 +22,12 @@ export interface WorkbookRowDisplayLine {
 export type WorkbookDisplayLine = WorkbookSheetDisplayLine | WorkbookRowDisplayLine;
 const PARSE_CACHE_LIMIT = 4000;
 const parsedDisplayLineCache = new Map<string, WorkbookDisplayLine | null>();
+const parsedDiffLineCache = new WeakMap<object, {
+  baseText: string | null;
+  mineText: string | null;
+  base: WorkbookDisplayLine | null;
+  mine: WorkbookDisplayLine | null;
+}>();
 
 function normalizeWorkbookField(text: string): string {
   return text
@@ -103,4 +109,28 @@ export function parseWorkbookDisplayLine(line: string): WorkbookDisplayLine | nu
   }
   parsedDisplayLineCache.set(line, parsed);
   return parsed;
+}
+
+/** Retain parsed rows only for the lifetime of their owning diff line. */
+export function parseWorkbookDiffLine(
+  line: { base: string | null; mine: string | null } | null,
+  side?: 'base' | 'mine',
+): WorkbookDisplayLine | null {
+  if (!line) return null;
+  let parsed = parsedDiffLineCache.get(line);
+  if (!parsed || parsed.baseText !== line.base || parsed.mineText !== line.mine) {
+    const base = line.base != null ? parseWorkbookDisplayLine(line.base) : null;
+    parsed = {
+      baseText: line.base,
+      mineText: line.mine,
+      base,
+      mine: line.mine === line.base
+        ? base
+        : line.mine != null ? parseWorkbookDisplayLine(line.mine) : null,
+    };
+    parsedDiffLineCache.set(line, parsed);
+  }
+  return side === 'base' ? parsed.base : side === 'mine' ? parsed.mine : (
+    line.base != null ? parsed.base : parsed.mine
+  );
 }

@@ -12,7 +12,7 @@ test('wide frozen-column window scrolls without losing workbook canvas content',
     window.localStorage.setItem('versora.settings', JSON.stringify({ themeKey: 'light' }));
     window.versora = { getLaunchContext: () => new Promise(() => {}) } as NonNullable<typeof window.versora>;
   });
-  await page.goto('/?__e2e=1');
+  await page.goto('/?__e2e=1&__perf=1');
   await page.waitForFunction(() => Boolean(window.__SVN_DIFF_E2E__));
 
   const columns = Array.from({ length: 40 }, (_, index) => `Column ${index + 1}`);
@@ -37,11 +37,17 @@ test('wide frozen-column window scrolls without losing workbook canvas content',
       mineContent: mine,
     });
   }, { baseContent, mineContent });
-  await page.waitForFunction(() => window.__SVN_DIFF_E2E__?.getSnapshot().isWorkbookMode === true);
+  await page.waitForFunction(() => {
+    const snapshot = window.__SVN_DIFF_PERF__?.getSnapshot();
+    return snapshot?.isWorkbookMode && snapshot.viewReadyToken > 0;
+  });
 
   const bodyScroller = page.locator('.overflow-y-auto.overflow-x-auto.relative.min-w-0.min-h-0');
   await bodyScroller.evaluate((element) => {
     element.scrollLeft = Math.min(2_400, element.scrollWidth - element.clientWidth);
+  });
+  await bodyScroller.evaluate(async () => {
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
   });
   const bodyCanvas = page.locator('[data-workbook-cell-canvas="true"]:not([data-workbook-header-row-canvas="true"])');
   await expect(bodyCanvas).toHaveCount(1);
@@ -52,8 +58,8 @@ test('wide frozen-column window scrolls without losing workbook canvas content',
 
   const frozenWindowScroller = page.locator('.overflow-x-auto.overflow-y-hidden.rounded-b-xl');
   await expect(frozenWindowScroller).toHaveCount(1);
+  await expect.poll(() => frozenWindowScroller.evaluate(element => element.scrollWidth - element.clientWidth)).toBeGreaterThan(200);
   const maxFrozenScrollLeft = await frozenWindowScroller.evaluate(element => element.scrollWidth - element.clientWidth);
-  expect(maxFrozenScrollLeft).toBeGreaterThan(200);
   await frozenWindowScroller.evaluate(async (element) => {
     const maxScrollLeft = element.scrollWidth - element.clientWidth;
     for (let step = 1; step <= 24; step += 1) {

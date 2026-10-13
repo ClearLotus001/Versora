@@ -119,6 +119,39 @@ test('renderer and shared main-process text alignment use the same implementatio
   );
 });
 
+test('alignTextChangeBlock preserves indexes and scores for empty and one-sided blocks', () => {
+  const lines = ['', 'return value;', '@@row\t3\tvalue', '汉字 😀', 'plain text '.repeat(300)];
+
+  assert.deepEqual(alignTextChangeBlock([], []), []);
+  assert.deepEqual(
+    alignTextChangeBlock(lines, []),
+    lines.map((_, deleteIndex) => ({ deleteIndex, addIndex: null, isReplacement: false, score: 0 })),
+  );
+  assert.deepEqual(
+    alignTextChangeBlock([], lines),
+    lines.map((_, addIndex) => ({ deleteIndex: null, addIndex, isReplacement: false, score: 0 })),
+  );
+});
+
+test('alignTextChangeBlock preserves positional pairing when either side contains a structured line', () => {
+  assert.deepEqual(
+    alignTextChangeBlock(['unrelated deletion', '@@row\t3\told'], ['other addition', 'plain line', 'extra line']),
+    [
+      { deleteIndex: 0, addIndex: 0, isReplacement: true, score: 1 },
+      { deleteIndex: 1, addIndex: 1, isReplacement: true, score: 1 },
+      { deleteIndex: null, addIndex: 2, isReplacement: false, score: 0 },
+    ],
+  );
+  assert.deepEqual(
+    alignTextChangeBlock(['unrelated deletion', 'plain line', 'extra line'], ['other addition', '@@row\t3\tnew']),
+    [
+      { deleteIndex: 0, addIndex: 0, isReplacement: true, score: 1 },
+      { deleteIndex: 1, addIndex: 1, isReplacement: true, score: 1 },
+      { deleteIndex: 2, addIndex: null, isReplacement: false, score: 0 },
+    ],
+  );
+});
+
 test('buildSplitRows uses replacement-aware alignment inside mixed change blocks', () => {
   const rows = buildSplitRows([
     makeDeleteLine('const alpha = 1;', 10),

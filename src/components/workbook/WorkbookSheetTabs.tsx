@@ -1,4 +1,5 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Menu } from 'lucide-react';
 import { getWorkbookFontScale } from '@/constants/typography';
 import Tooltip from '@/components/shared/Tooltip';
@@ -41,7 +42,9 @@ const WorkbookSheetTabs = memo(({
   const sizes = useMemo(() => getWorkbookFontScale(fontSize), [fontSize]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuSurfaceRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ left: 8, bottom: 0, maxHeight: 320 });
   const [expandedCollapseKeys, setExpandedCollapseKeys] = useState<Set<string>>(() => new Set());
   const sheetTabItems = useMemo(
     () => buildWorkbookSheetTabItems(sections, {
@@ -163,11 +166,22 @@ const WorkbookSheetTabs = memo(({
   useEffect(() => {
     if (!menuOpen) return;
     const handlePointerDown = (event: MouseEvent) => {
-      if (menuRef.current?.contains(event.target as Node | null)) return;
+      if (menuRef.current?.contains(event.target as Node | null) || menuSurfaceRef.current?.contains(event.target as Node | null)) return;
       setMenuOpen(false);
     };
     window.addEventListener('mousedown', handlePointerDown);
     return () => window.removeEventListener('mousedown', handlePointerDown);
+  }, [menuOpen]);
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    const update = () => {
+      const anchor = menuRef.current?.getBoundingClientRect();
+      if (anchor) setMenuPosition({ left: Math.max(8, Math.min(anchor.left, window.innerWidth - 228)),
+        bottom: window.innerHeight - anchor.top + 7, maxHeight: Math.min(320, Math.max(30, anchor.top - 15)) });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
   }, [menuOpen]);
 
   if (sections.length === 0) return null;
@@ -192,11 +206,12 @@ const WorkbookSheetTabs = memo(({
           <Menu size={13} />
           <span className="font-code text-[10px] font-bold tabular-nums">{sections.length}</span>
         </button>
-        {menuOpen && (
+        {menuOpen && createPortal(
           <div
+            ref={menuSurfaceRef}
             data-testid="workbook-sheet-menu"
-            className="motion-floating-panel app-themed-scrollbar absolute left-0 bottom-[calc(100%+7px)] min-w-[220px] max-h-80 overflow-y-auto p-1.5 rounded-[12px] border border-border-default bg-bg-surface-solid grid gap-1 z-[96]"
-            style={{ boxShadow: `0 16px 40px -24px ${cssVar('border2')}` }}>
+            className="motion-floating-panel app-themed-scrollbar fixed min-w-[220px] overflow-y-auto p-1.5 rounded-[12px] border border-border-default bg-bg-surface-solid grid gap-1 z-[160]"
+            style={{ ...menuPosition, boxShadow: `0 16px 40px -24px ${cssVar('border2')}` }}>
             {sections.map((section, index) => {
               const active = index === activeIndex;
               const modified = isModifiedSection(section);
@@ -256,7 +271,7 @@ const WorkbookSheetTabs = memo(({
                 </Tooltip>
               );
             })}
-          </div>
+          </div>, document.body,
         )}
       </div>
 

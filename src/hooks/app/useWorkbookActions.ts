@@ -1,6 +1,7 @@
-import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 
 import type {
+  DiffData,
   WorkbookCompareMode,
   WorkbookDiffRegion,
   WorkbookMetadataMap,
@@ -29,7 +30,7 @@ import {
 } from '@/utils/workbook/workbookFreeze';
 import {
   clampWorkbookColumnWidth,
-  measureWorkbookAutoFitColumnWidth,
+  measureWorkbookAutoFitColumnWidthsAsync,
 } from '@/utils/workbook/workbookColumnWidths';
 import {
   buildWorkbookSheetPresentation,
@@ -54,6 +55,8 @@ interface UseWorkbookActionsArgs {
   workbookDiffRegions: WorkbookDiffRegion[];
   isWorkbookMode: boolean;
   setHunkIdx: Dispatch<SetStateAction<number>>;
+  onError: (message: string) => void;
+  currentDiffDataRef: MutableRefObject<DiffData | null>;
 }
 
 export interface UseWorkbookActionsResult {
@@ -81,7 +84,26 @@ export default function useWorkbookActions({
   workbookDiffRegions,
   isWorkbookMode,
   setHunkIdx,
+  onError,
+  currentDiffDataRef,
 }: UseWorkbookActionsArgs): UseWorkbookActionsResult {
+  const latestActionContext = useRef({ workbookSectionRowIndex, workbookCompareMode, fontSize, onError });
+  latestActionContext.current = { workbookSectionRowIndex, workbookCompareMode, fontSize, onError };
+  const autoFitSequence = useRef(0);
+  const autoFitController = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    autoFitSequence.current += 1;
+    autoFitController.current?.abort();
+  }, [workbookSectionRowIndex, workbookCompareMode, fontSize]);
+  const isActionCurrent = useCallback((data: DiffData | null) => (
+    currentDiffDataRef.current === data
+    && latestActionContext.current.workbookSectionRowIndex === workbookSectionRowIndex
+    && latestActionContext.current.workbookCompareMode === workbookCompareMode
+  ), [currentDiffDataRef, workbookCompareMode, workbookSectionRowIndex]);
+  const reportActionError = useCallback((error: unknown, data: DiffData | null) => {
+    if (!isActionCurrent(data)) return;
+    latestActionContext.current.onError(error instanceof Error ? error.message : String(error));
+  }, [isActionCurrent]);
   const {
     state: {
       selection: workbookSelection,
@@ -197,6 +219,9 @@ export default function useWorkbookActions({
     column: number,
     width: number,
   ) => {
+    autoFitSequence.current += 1;
+    autoFitController.current?.abort();
+    workbookSectionRowIndex.artifactProvider?.cancelColumnMeasurement();
     const nextWidth = clampWorkbookColumnWidth(width);
     setWorkbookColumnWidthBySheet((prev) => {
       const nextSheet = {
@@ -208,7 +233,7 @@ export default function useWorkbookActions({
         [sheetName]: nextSheet,
       };
     });
-  }, [setWorkbookColumnWidthBySheet]);
+  }, [setWorkbookColumnWidthBySheet, workbookSectionRowIndex]);
 
   const handleHideSelectedRows = useCallback(() => {
     if (!selectedCell || selectedCell.kind !== 'row') return;
@@ -285,15 +310,32 @@ export default function useWorkbookActions({
     setWorkbookContextMenu(null);
   }, [setWorkbookContextMenu, setWorkbookHiddenStateBySheet, workbookHiddenStateBySheet]);
 
-  const handleAutoFitSelectedColumns = useCallback(() => {
+  const handleAutoFitSelectedColumns = useCallback(async () => {
     if (!selectedCell || selectedCell.kind !== 'column') return;
-    const sectionRows = workbookSectionRowIndex.get(selectedCell.sheetName)?.rows ?? [];
     const columns = getSelectedWorkbookColumns(workbookSelection);
     if (columns.length === 0) return;
+    const data = currentDiffDataRef.current;
+    const sequence = ++autoFitSequence.current;
+    autoFitController.current?.abort();
+    const controller = new AbortController();
+    autoFitController.current = controller;
+    let measured: number[];
+    try {
+      measured = await measureWorkbookAutoFitColumnWidthsAsync(workbookSectionRowIndex.artifactProvider, selectedCell.sheetName, columns, fontSize, {
+        signal: controller.signal,
+        isCurrent: () => isActionCurrent(data) && sequence === autoFitSequence.current && latestActionContext.current.fontSize === fontSize,
+      });
+    } catch (error) {
+      if (!controller.signal.aborted && !(error instanceof Error && error.name === 'AbortError') && sequence === autoFitSequence.current) reportActionError(error, data);
+      return;
+    } finally {
+      if (autoFitController.current === controller) autoFitController.current = null;
+    }
+    if (!isActionCurrent(data) || sequence !== autoFitSequence.current || latestActionContext.current.fontSize !== fontSize) return;
     setWorkbookColumnWidthBySheet((prev) => {
       const nextSheet = { ...(prev[selectedCell.sheetName] ?? {}) };
-      columns.forEach((column) => {
-        nextSheet[column] = measureWorkbookAutoFitColumnWidth(sectionRows, column, fontSize);
+      columns.forEach((column, index) => {
+        nextSheet[column] = measured[index]!;
       });
       return {
         ...prev,
@@ -308,7 +350,23 @@ export default function useWorkbookActions({
     setWorkbookContextMenu,
     workbookSectionRowIndex,
     workbookSelection,
+    isActionCurrent,
+    reportActionError,
+    currentDiffDataRef,
   ]);
+
+  const handleCopyCell = useCallback(async (primary: WorkbookSelectedCell, field: 'value' | 'formula' | 'address') => {
+    const data = currentDiffDataRef.current;
+    try {
+      const provider = workbookSectionRowIndex.get(primary.sheetName)?.rows[0]?.workbookArtifactRow?.provider;
+      const resolved = field !== 'address' && provider ? await provider.resolveSelection(primary) : primary;
+      if (!isActionCurrent(data)) return;
+      const copied = await copyText(resolved[field]);
+      if (!copied) reportActionError(t('workbookCellLoadError'), data);
+    } catch (error) {
+      reportActionError(error, data);
+    }
+  }, [currentDiffDataRef, workbookSectionRowIndex, isActionCurrent, reportActionError, t]);
 
   const workbookContextMenuSections = useMemo<WorkbookContextMenuSection[]>(() => {
     const menuSelection = workbookContextMenu?.selection ?? createWorkbookSelectionState(null);
@@ -334,17 +392,17 @@ export default function useWorkbookActions({
           {
             id: 'copy-value',
             label: t('workbookContextCopyValue'),
-            onSelect: () => { void copyText(primary.value); },
+            onSelect: () => { void handleCopyCell(primary, 'value'); },
           },
           {
             id: 'copy-formula',
             label: t('workbookContextCopyFormula'),
-            onSelect: () => { void copyText(primary.formula); },
+            onSelect: () => { void handleCopyCell(primary, 'formula'); },
           },
           {
             id: 'copy-address',
             label: t('workbookContextCopyAddress'),
-            onSelect: () => { void copyText(primary.address); },
+            onSelect: () => { void handleCopyCell(primary, 'address'); },
           },
         ],
       });
@@ -398,7 +456,7 @@ export default function useWorkbookActions({
             id: 'auto-fit-columns',
             label: t('workbookContextAutoFitColumns', { count: selectionCount }),
             disabled: getSelectedWorkbookColumns(menuSelection).length === 0,
-            onSelect: handleAutoFitSelectedColumns,
+            onSelect: () => { void handleAutoFitSelectedColumns(); },
           },
           {
             id: 'hide-columns',
@@ -482,6 +540,7 @@ export default function useWorkbookActions({
   }, [
     baseWorkbookMetadata,
     handleAutoFitSelectedColumns,
+    handleCopyCell,
     handleFreezeColumnForSelection,
     handleFreezePaneForSelection,
     handleFreezeRowForSelection,

@@ -50,7 +50,7 @@ test('main-process pure logic imports do not require the Electron binary artifac
     assert.equal(typeof maintenance.getMaintenanceModeFromArgv, 'function');
     assert.equal(typeof analysisSnapshotService.resolveAnalysisSnapshot, 'function');
     assert.equal(typeof diffBuilder.buildLocalDiffData, 'function');
-    assert.equal(typeof svnOperations.haveSameLocalFileContents, 'function');
+    assert.equal(typeof svnOperations.queryRevisionOptionsForTarget, 'function');
     assert.equal(typeof svnHelpers.shouldResolveSvnRuntimeContext, 'function');
   } finally {
     restoreElectronPathFile();

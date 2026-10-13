@@ -4,7 +4,6 @@ import type {
   PreparedTextAnalysis,
   SplitRowDescriptor,
   TextReplacementPair,
-  WorkbookDiffRegion,
   WorkbookRowDelta,
 } from '@/types';
 
@@ -37,14 +36,6 @@ export function resolveWorkbookRowDiffType(
   return delta.hasChanges ? 'modify' : null;
 }
 
-function resolveWorkbookRegionDiffType(
-  region: Pick<WorkbookDiffRegion, 'hasBaseSide' | 'hasMineSide'>,
-): ConcreteDiffType {
-  if (!region.hasBaseSide && region.hasMineSide) return 'add';
-  if (region.hasBaseSide && !region.hasMineSide) return 'delete';
-  return 'modify';
-}
-
 export function getTextDiffTypeAvailability(
   analysis: Pick<PreparedTextAnalysis, 'stats'> | null,
 ): DiffTypeAvailability {
@@ -54,13 +45,6 @@ export function getTextDiffTypeAvailability(
     modify: analysis.stats.chg > 0,
     delete: analysis.stats.del > 0,
   };
-}
-
-export function workbookRegionMatchesDiffType(
-  region: Pick<WorkbookDiffRegion, 'hasBaseSide' | 'hasMineSide'>,
-  filter: DiffTypeFilter,
-) {
-  return filter === 'all' || resolveWorkbookRegionDiffType(region) === filter;
 }
 
 const filteredTextAnalysisCache = new WeakMap<

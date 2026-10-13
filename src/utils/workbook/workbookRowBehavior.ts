@@ -18,14 +18,17 @@ export function getWorkbookStackedBandDisplayRowNumber(
 }
 
 export function shouldRenderSingleMineStackedRow(row: SplitRow): boolean {
+  if (row.workbookArtifactRow) return row.workbookArtifactRow.kind === 1;
   return row.left == null && row.right?.type === 'add';
 }
 
 export function shouldRenderSingleBaseStackedRow(row: SplitRow): boolean {
+  if (row.workbookArtifactRow) return row.workbookArtifactRow.kind === 2;
   return row.right == null && row.left?.type === 'delete';
 }
 
 export function shouldRenderSingleEqualStackedRow(row: SplitRow): boolean {
+  if (row.workbookArtifactRow) return row.workbookArtifactRow.kind === 0 && row.workbookArtifactRow.baseRowNumber === row.workbookArtifactRow.mineRowNumber;
   if (!row.left || !row.right) return false;
   if (row.left.type !== 'equal' || row.right.type !== 'equal') return false;
   if (row.left.base == null || row.right.mine == null) return false;

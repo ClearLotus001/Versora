@@ -67,6 +67,27 @@ test('clicking a single workbook hunk again scrolls both panes to its off-screen
   expect(Math.abs((scrollLefts[0] ?? 0) - (scrollLefts[1] ?? 0))).toBeLessThanOrEqual(1);
 });
 
+test('F7 immediately refocuses an off-screen workbook hunk in both horizontal panes', async ({ page }) => {
+  await loadWideWorkbookDiff(page);
+
+  const paneScrollers = page.locator('.overflow-auto.relative');
+  await expect(paneScrollers).toHaveCount(2);
+  await expect(page.getByText('1/1', { exact: true })).toBeVisible();
+  await paneScrollers.evaluateAll((elements) => {
+    elements.forEach((element) => {
+      element.scrollLeft = 0;
+      element.dispatchEvent(new Event('scroll'));
+    });
+  });
+  await expect.poll(() => paneScrollers.first().evaluate((element) => element.scrollLeft)).toBe(0);
+
+  await page.keyboard.press('F7');
+
+  await expect.poll(() => paneScrollers.first().evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+  const scrollLefts = await paneScrollers.evaluateAll((elements) => elements.map((element) => element.scrollLeft));
+  expect(Math.abs((scrollLefts[0] ?? 0) - (scrollLefts[1] ?? 0))).toBeLessThanOrEqual(1);
+});
+
 for (const layout of ['split-v', 'unified'] as const) {
   test(`F7 refocuses a single off-screen workbook hunk in ${layout}`, async ({ page }) => {
     await loadWideWorkbookDiff(page, layout);

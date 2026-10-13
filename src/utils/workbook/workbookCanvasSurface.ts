@@ -2,6 +2,22 @@ export function getWorkbookCanvasDevicePixelRatio(): number {
   return typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
 }
 
+export function paintWorkbookCanvasBackdrop(
+  ctx: CanvasRenderingContext2D,
+  rect: { left: number; top: number; width: number; height: number },
+  opaqueBackground: string,
+  rowBackground: string,
+): void {
+  // Both frozen and scrolling cells must blend state colors over a fresh,
+  // opaque surface rather than over chrome or a previous drawing pass.
+  ctx.fillStyle = opaqueBackground;
+  ctx.fillRect(rect.left, rect.top, rect.width, rect.height);
+  if (rowBackground !== opaqueBackground) {
+    ctx.fillStyle = rowBackground;
+    ctx.fillRect(rect.left, rect.top, rect.width, rect.height);
+  }
+}
+
 export function syncWorkbookCanvasSurface(
   canvas: HTMLCanvasElement,
   cssWidth: number,

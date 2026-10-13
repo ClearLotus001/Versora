@@ -101,7 +101,7 @@ function drawWorkbookMaskedCellOverlay(
   ctx.beginPath();
   ctx.rect(left, top, width, height);
   ctx.clip();
-  ctx.fillStyle = theme.bg2;
+  ctx.fillStyle = theme.workbookMissingBg;
   ctx.fillRect(left, top, width, height);
   ctx.strokeStyle = `${theme.workbookGridBorderStrong}${lineAlpha}`;
   ctx.lineWidth = 1;

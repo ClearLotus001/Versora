@@ -15,7 +15,7 @@ const typedProjects = [
 const lintedFiles = [
   'src/**/*.{ts,tsx}',
   'electron/**/*.ts',
-  'scripts/**/*.ts',
+  'scripts/**/*.{ts,mts}',
   'shared/**/*.ts',
 ];
 
@@ -121,7 +121,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.ts'],
+    files: ['scripts/**/*.{ts,mts}'],
     languageOptions: {
       globals: globals.node,
     },

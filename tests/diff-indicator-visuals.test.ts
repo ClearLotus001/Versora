@@ -70,8 +70,8 @@ test('theme indicator visuals expose shared soft and strong semantic surfaces', 
     textColor: lightTheme.chgTx,
   });
   assert.deepEqual(resolveDiffIndicatorThemeVisual(lightTheme, 'strict-only', 'strong'), {
-    background: `${lightTheme.searchHl}16`,
-    border: `${lightTheme.searchHl}66`,
-    textColor: lightTheme.searchHl,
+    background: lightTheme.whitespaceBg,
+    border: lightTheme.whitespaceBrd,
+    textColor: lightTheme.whitespaceTx,
   });
 });

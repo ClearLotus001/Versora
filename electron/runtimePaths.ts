@@ -25,6 +25,12 @@ export interface RuntimePathState {
 }
 
 const trackedTempPaths = new Set<string>();
+const trackedTempDirectories = new Set<string>();
+
+function isTrackedTempPath(filePath: string): boolean {
+  return trackedTempPaths.has(filePath)
+    || [...trackedTempDirectories].some(root => isSafePathWithinRoot(root, filePath));
+}
 
 let runtimePathState: RuntimePathState = {
   cacheRoot: null,
@@ -159,7 +165,7 @@ function enforceTempBudgetSync() {
   if (!isManagedTempRootSafe(tempRootPath) || !fs.existsSync(tempRootPath)) return;
 
   const fileEntries = collectFileEntriesSync(tempRootPath)
-    .filter((entry) => !trackedTempPaths.has(entry.filePath))
+    .filter((entry) => !isTrackedTempPath(entry.filePath))
     .sort((left, right) => left.mtimeMs - right.mtimeMs);
 
   let totalBytes = fileEntries.reduce((sum, entry) => sum + entry.size, 0);
@@ -189,7 +195,7 @@ export function cleanupStaleManagedTempFilesSync(
   lastManagedTempCleanupAt = now;
 
   collectFileEntriesSync(tempRootPath).forEach((entry) => {
-    if (trackedTempPaths.has(entry.filePath)) return;
+    if (isTrackedTempPath(entry.filePath)) return;
     if ((now - entry.mtimeMs) < STALE_TEMP_MAX_AGE_MS) return;
     void removeFileEntrySync(entry.filePath, tempRootPath);
   });
@@ -276,11 +282,7 @@ function normalizeExtension(extension: string): string {
   return extension.startsWith('.') ? extension : `.${extension}`;
 }
 
-export async function writeManagedTempFile(
-  prefix: string,
-  extension: string,
-  contents: Buffer | Uint8Array,
-): Promise<string> {
+function createManagedTempFilePath(prefix: string, extension: string): string {
   const tempRootPath = runtimePathState.tempRootPath;
   if (!tempRootPath) {
     throw new Error('Managed temp root is not configured.');
@@ -291,24 +293,66 @@ export async function writeManagedTempFile(
 
   ensureDirectorySync(tempRootPath);
   cleanupStaleManagedTempFilesSync();
-
-  const tempFilePath = path.join(
+  return path.join(
     tempRootPath,
     `versora-${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}${normalizeExtension(extension)}`,
   );
+}
 
+export function copyToManagedTempFileSync(prefix: string, sourcePath: string): string {
+  const tempFilePath = createManagedTempFilePath(prefix, path.extname(sourcePath));
+  fs.copyFileSync(sourcePath, tempFilePath);
+  trackedTempPaths.add(tempFilePath);
+  return tempFilePath;
+}
+
+export async function writeManagedTempFile(
+  prefix: string,
+  extension: string,
+  contents: Buffer | Uint8Array,
+): Promise<string> {
+  const tempFilePath = createManagedTempFilePath(prefix, extension);
   await fs.promises.writeFile(tempFilePath, Buffer.from(contents));
   trackedTempPaths.add(tempFilePath);
   return tempFilePath;
 }
 
-export async function removeManagedTempFile(tempFilePath: string) {
-  trackedTempPaths.delete(tempFilePath);
-  const tempRootPath = runtimePathState.tempRootPath;
-  if (!isManagedTempRootSafe(tempRootPath) || !isSafePathWithinRoot(tempRootPath, tempFilePath)) return;
+/** The whole directory is a lease, including files a native child creates later. */
+export async function createManagedTempDirectory(prefix: string): Promise<string> {
+  const tempPath = createManagedTempFilePath(prefix, '.artifact');
+  trackedTempDirectories.add(tempPath);
+  try {
+    await fs.promises.mkdir(tempPath);
+    return tempPath;
+  } catch (error) {
+    trackedTempDirectories.delete(tempPath);
+    throw error;
+  }
+}
 
-  await fs.promises.rm(tempFilePath, { force: true });
-  cleanupEmptyDirectoriesSync(path.dirname(tempFilePath), tempRootPath);
+export async function removeManagedTempDirectory(tempPath: string): Promise<void> {
+  const tempRootPath = runtimePathState.tempRootPath;
+  if (!trackedTempDirectories.has(tempPath)
+    || !isManagedTempRootSafe(tempRootPath)
+    || !isSafePathWithinRoot(tempRootPath, tempPath)) return;
+  await fs.promises.rm(tempPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  trackedTempDirectories.delete(tempPath);
+}
+
+export function removeTrackedManagedTempFilesSync(tempFilePaths: Iterable<string>): void {
+  const tempRootPath = runtimePathState.tempRootPath;
+  if (!isManagedTempRootSafe(tempRootPath)) return;
+
+  for (const tempFilePath of new Set(tempFilePaths)) {
+    if (!trackedTempPaths.has(tempFilePath) || !isSafePathWithinRoot(tempRootPath, tempFilePath)) continue;
+    try {
+      fs.rmSync(tempFilePath, { force: true });
+      trackedTempPaths.delete(tempFilePath);
+      cleanupEmptyDirectoriesSync(path.dirname(tempFilePath), tempRootPath);
+    } catch (error) {
+      logMainDebug('runtime-paths', 'remove tracked temp skipped:', tempFilePath, error instanceof Error ? error.message : String(error));
+    }
+  }
 }
 
 export function cleanupManagedTempFilesOnExitSync() {
@@ -318,6 +362,7 @@ export function cleanupManagedTempFilesOnExitSync() {
     || !fs.existsSync(tempRootPath)
   ) {
     trackedTempPaths.clear();
+    trackedTempDirectories.clear();
     return;
   }
 
@@ -337,6 +382,7 @@ export function cleanupManagedTempFilesOnExitSync() {
     );
   } finally {
     trackedTempPaths.clear();
+    trackedTempDirectories.clear();
   }
 }
 

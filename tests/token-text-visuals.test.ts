@@ -42,7 +42,7 @@ test('TokenText keeps diff highlight under search highlights', () => {
   assert.match(html, /var\(--search-hl\)[\s\S]*var\(--diff-modify-hl\)/);
 });
 
-test('TokenText keeps syntax color on character diff highlights', () => {
+test('TokenText retains accessible syntax colors and adjusts weak character diff foregrounds', () => {
   const html = renderToStaticMarkup(
     React.createElement(
       ThemeContext.Provider,
@@ -64,8 +64,9 @@ test('TokenText keeps syntax color on character diff highlights', () => {
   );
 
   assert.match(html, /data-diff-char-highlight="true"/);
-  assert.match(html, /color:#cf222e/);
-  assert.match(html, /-webkit-text-fill-color:#cf222e/);
+  const keywordColor = html.match(/style="color:(#[\da-f]{6});-webkit-text-fill-color:\1[^>]*>return</i)?.[1];
+  assert.ok(keywordColor);
+  assert.notEqual(keywordColor, '#cf222e');
   assert.match(html, /color:#0a3069/);
   assert.match(html, /-webkit-text-fill-color:#0a3069/);
 });

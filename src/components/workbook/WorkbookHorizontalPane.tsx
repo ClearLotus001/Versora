@@ -28,7 +28,7 @@ export default function WorkbookHorizontalPane({
       <div
         ref={paneRef}
         onScroll={onScroll}
-        className="flex-1 overflow-auto relative min-w-0 min-h-0"
+        className="flex-1 overflow-auto relative min-w-0 min-h-0 bg-workbook-canvas-bg"
         style={{
           overflowAnchor: 'none',
           overflowX: 'scroll',

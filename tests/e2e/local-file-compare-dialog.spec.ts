@@ -36,8 +36,6 @@ test('two-file dialog explains automatic Git/SVN detection and local fallback be
         compareContext: 'literal_two_file_compare',
         baseContent: null,
         mineContent: null,
-        baseBytes: null,
-        mineBytes: null,
         revisionOptions: null,
         baseRevisionInfo: null,
         mineRevisionInfo: null,

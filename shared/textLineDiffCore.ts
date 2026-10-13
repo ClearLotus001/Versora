@@ -80,10 +80,10 @@ function patienceLcs(baseLines: string[], mineLines: string[]): TextLineAnchor[]
   const anchors: TextLineAnchor[] = [];
   let node: LcsNode | null = piles[piles.length - 1] ?? null;
   while (node) {
-    anchors.unshift({ baseIndex: node.baseIndex, mineIndex: node.mineIndex });
+    anchors.push({ baseIndex: node.baseIndex, mineIndex: node.mineIndex });
     node = node.previous;
   }
-  return anchors;
+  return anchors.reverse();
 }
 
 function exceedsCandidateBudget(baseLines: string[], mineLines: string[]): boolean {
@@ -120,10 +120,10 @@ function longestIncreasingAnchors(candidates: TextLineAnchor[]): TextLineAnchor[
   const result: TextLineAnchor[] = [];
   let current = piles[piles.length - 1] ?? -1;
   while (current >= 0) {
-    result.unshift(candidates[current]!);
+    result.push(candidates[current]!);
     current = previous[current]!;
   }
-  return result;
+  return result.reverse();
 }
 
 function findUniqueAnchors(baseLines: string[], mineLines: string[]): TextLineAnchor[] {

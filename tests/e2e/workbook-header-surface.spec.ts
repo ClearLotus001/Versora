@@ -18,7 +18,7 @@ test('workbook header surfaces stay opaque in left-right layout and square in co
     window.localStorage.setItem('versora.settings', JSON.stringify({ themeKey: 'light' }));
     window.versora = { getLaunchContext: () => new Promise(() => {}) } as NonNullable<typeof window.versora>;
   });
-  await page.goto('/?__e2e=1');
+  await page.goto('/?__e2e=1&__perf=1');
   await page.waitForFunction(() => Boolean(window.__SVN_DIFF_E2E__));
   await page.evaluate(async () => {
     const baseContent = '@@sheet\tSheet1\n@@row\t1\tOpen main label\tRequired rank\n@@row\t2\t0\t15';
@@ -33,7 +33,10 @@ test('workbook header surfaces stay opaque in left-right layout and square in co
       mineContent,
     });
   });
-  await page.waitForFunction(() => window.__SVN_DIFF_E2E__?.getSnapshot().isWorkbookMode === true);
+  await page.waitForFunction(() => {
+    const snapshot = window.__SVN_DIFF_PERF__?.getSnapshot();
+    return snapshot?.isWorkbookMode && snapshot.viewReadyToken > 0;
+  });
 
   const horizontalHeaderCanvases = page.locator('[data-workbook-header-row-canvas="true"]');
   await expect(horizontalHeaderCanvases).toHaveCount(2);
@@ -97,7 +100,16 @@ test('workbook header surfaces stay opaque in left-right layout and square in co
     '[data-testid="workbook-pane-canvas-mine"]:not([data-workbook-header-row-canvas="true"])',
   ].join(', '));
   await expect(horizontalBodyCanvases).toHaveCount(2);
-  const horizontalVersionSurfaceColors = await horizontalBodyCanvases.evaluateAll((elements, sampleX) => (
+  const neutralBodyColor = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--workbook-cell-bg').trim();
+    context.fillRect(0, 0, 1, 1);
+    return Array.from(context.getImageData(0, 0, 1, 1).data);
+  });
+  const horizontalNeutralBodyColors = await horizontalBodyCanvases.evaluateAll((elements, sampleX) => (
     elements.map((element) => {
       if (!(element instanceof HTMLCanvasElement)) return [];
       const context = element.getContext('2d');
@@ -112,10 +124,8 @@ test('workbook header surfaces stay opaque in left-right layout and square in co
       ).data);
     })
   ), LN_W + 3 + (WORKBOOK_CELL_WIDTH / 2));
-  expect(horizontalVersionSurfaceColors).toEqual([
-    [240, 245, 249, 255],
-    [246, 244, 238, 255],
-  ]);
+  expect(neutralBodyColor[3]).toBe(255);
+  expect(horizontalNeutralBodyColors).toEqual([neutralBodyColor, neutralBodyColor]);
   const terminalBoundarySamples = await baseBodyCanvas.evaluate((element, sampleXs) => {
     if (!(element instanceof HTMLCanvasElement)) return [];
     const context = element.getContext('2d');
@@ -142,14 +152,16 @@ test('workbook header surfaces stay opaque in left-right layout and square in co
     expect(sample.bottom[3]).toBe(255);
   });
 
+  const beforeLayoutReady = await page.evaluate(() => window.__SVN_DIFF_PERF__!.getSnapshot().viewReadyToken);
   await page.getByTestId('toolbar-layout-split-v').click();
+  await page.waitForFunction(token => window.__SVN_DIFF_PERF__!.getSnapshot().viewReadyToken > token, beforeLayoutReady);
   const squareHeaderPane = page.locator('[data-workbook-frozen-rows-pane="header"]');
   await expect(squareHeaderPane).toHaveCount(1);
   await expect.poll(() => squareHeaderPane.evaluate((element) => getComputedStyle(element).borderRadius)).toBe('0px');
 
   const columnsBodyCanvas = page.locator('[data-workbook-cell-canvas="true"]:not([data-workbook-header-row-canvas="true"])');
   await expect(columnsBodyCanvas).toHaveCount(1);
-  const versionSurfaceColors = await columnsBodyCanvas.evaluate((element, samplePairs) => {
+  const neutralBodyColors = await columnsBodyCanvas.evaluate((element, samplePairs) => {
     if (!(element instanceof HTMLCanvasElement)) return [];
     const context = element.getContext('2d');
     if (!context) return [];
@@ -179,13 +191,11 @@ test('workbook header surfaces stay opaque in left-right layout and square in co
       center: LN_W + 3 + WORKBOOK_CELL_WIDTH + (WORKBOOK_CELL_WIDTH / 2),
     },
   ]);
-  expect(versionSurfaceColors).toHaveLength(2);
-  expect(versionSurfaceColors[0]?.nearLeft).toEqual(versionSurfaceColors[0]?.center);
-  expect(versionSurfaceColors[1]?.nearLeft).toEqual(versionSurfaceColors[1]?.center);
-  expect(versionSurfaceColors[0]?.center).toEqual([240, 245, 249, 255]);
-  expect(versionSurfaceColors[1]?.center).toEqual([246, 244, 238, 255]);
-  expect(versionSurfaceColors[0]?.center[3]).toBe(255);
-  expect(versionSurfaceColors[1]?.center[3]).toBe(255);
+  expect(neutralBodyColors).toHaveLength(2);
+  expect(neutralBodyColors[0]?.nearLeft).toEqual(neutralBodyColors[0]?.center);
+  expect(neutralBodyColors[1]?.nearLeft).toEqual(neutralBodyColors[1]?.center);
+  expect(neutralBodyColors[0]?.center).toEqual(neutralBodyColor);
+  expect(neutralBodyColors[1]?.center).toEqual(neutralBodyColor);
 
   const changedBaseCellLeft = LN_W + 3 + (WORKBOOK_CELL_WIDTH * 2);
   const changedMineCellLeft = changedBaseCellLeft + WORKBOOK_CELL_WIDTH;

@@ -5,9 +5,11 @@ import path from 'node:path';
 const repoRoot = path.resolve(__dirname, '..');
 const testsDir = path.join(repoRoot, 'tests');
 const rustRequiredTests = new Set([
-  'analysis-snapshot-service.test.ts',
+  'comparison-ipc-workbook-swap.test.ts',
   'local-diff-follow-up-loaders.test.ts',
   'rust-workbook-diff-smoke.test.ts',
+  'two-file-svn-revision-compare.test.ts',
+  'workbook-artifact-git-revision.test.ts',
 ]);
 const args = process.argv.slice(2);
 const skipRustRequired = args.includes('--skip-rust-required');

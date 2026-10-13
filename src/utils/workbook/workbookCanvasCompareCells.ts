@@ -1,4 +1,5 @@
 import type { WorkbookCellDelta } from '@/types';
+import type { WorkbookRowEntry } from '@/utils/workbook/workbookNavigation';
 import {
   getWorkbookMergedCompareCell,
   getWorkbookMergedCompareCellFromRows,
@@ -17,6 +18,25 @@ export interface ResolveWorkbookCanvasCompareCellParams {
   anchorRowNumber: number;
   column: number;
   mergeRange?: WorkbookCanvasCompareCellRange | null;
+}
+
+export function resolveWorkbookCanvasAnchor({
+  entry,
+  rowEntryByRowNumber,
+  column,
+  mergeRange = null,
+}: {
+  entry: WorkbookRowEntry;
+  rowEntryByRowNumber: ReadonlyMap<number, WorkbookRowEntry>;
+  column: number;
+  mergeRange?: WorkbookCanvasCompareCellRange | null;
+}): { entry: WorkbookRowEntry; rowNumber: number; column: number } {
+  const rowNumber = mergeRange?.startRow ?? entry.rowNumber;
+  return {
+    entry: rowEntryByRowNumber.get(rowNumber) ?? entry,
+    rowNumber,
+    column: mergeRange?.startCol ?? column,
+  };
 }
 
 export function resolveWorkbookCanvasCompareCell({

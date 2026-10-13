@@ -29,12 +29,8 @@ import type {
 // File-type helpers
 // ---------------------------------------------------------------------------
 
-export function getExtension(filePath: string): string {
-  return path.extname(filePath).toLowerCase();
-}
-
 export function isWorkbookFile(filePath: string): boolean {
-  return WORKBOOK_EXTENSIONS.has(getExtension(filePath));
+  return WORKBOOK_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
 // ---------------------------------------------------------------------------
@@ -614,10 +610,6 @@ export function isSameWorkbookSource(
     && Boolean(args.basePath && args.basePath === args.minePath);
 }
 
-export function usesLocalInputSource(revisionId: string | undefined): boolean {
-  return !revisionId || revisionId === SPECIAL_BASE_ID || revisionId === SPECIAL_MINE_ID;
-}
-
 export function createRequestedRevisionInfo(
   side: 'base' | 'mine',
   requestedId: string | undefined,
@@ -678,14 +670,6 @@ export function buildLaunchDisplayName(
   if (label) return label;
   return fileName.trim();
 }
-
-export function buildFileEqualityCacheKey(leftPath: string, rightPath: string): string {
-  return [leftPath, rightPath].sort((left, right) => left.localeCompare(right)).join('::');
-}
-
-// ---------------------------------------------------------------------------
-// SVN log XML parsing
-// ---------------------------------------------------------------------------
 
 export function parseLogEntries(xmlText: string): SvnRevisionInfo[] {
   if (!xmlText.trim()) return [];

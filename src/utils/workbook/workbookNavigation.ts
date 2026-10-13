@@ -7,7 +7,7 @@ import type {
   WorkbookSelectedCell,
 } from '@/types';
 import type { WorkbookCellDisplay, WorkbookRowDisplayLine } from '@/utils/workbook/workbookDisplay';
-import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
+import { parseWorkbookDiffLine, parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
 import type { WorkbookLineSheetContext, WorkbookSection } from '@/utils/workbook/workbookSections';
 import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import { findWorkbookMergeRange } from '@/utils/workbook/workbookMergeLayout';
@@ -20,15 +20,16 @@ export interface WorkbookRowEntry {
   cells: WorkbookCellDisplay[];
   visibleColumns: number[];
   lineIdxs: number[];
+  artifactRow?: import('@/utils/workbook/workbookArtifactProvider').WorkbookArtifactRowReference;
+  loadedColumns?: ReadonlySet<number>;
 }
 
 function normalizeRowCells(cells: WorkbookCellDisplay[]): WorkbookCellDisplay[] {
   return cells.length > 0 ? cells : [{ value: '', formula: '' }];
 }
 
-function parseWorkbookRow(line: string | null): WorkbookRowDisplayLine | null {
-  if (!line) return null;
-  const parsed = parseWorkbookDisplayLine(line);
+function parseWorkbookRow(line: DiffLine | null, side?: 'base' | 'mine'): WorkbookRowDisplayLine | null {
+  const parsed = parseWorkbookDiffLine(line, side);
   return parsed?.kind === 'row' ? parsed : null;
 }
 
@@ -58,8 +59,8 @@ function parseWorkbookSplitRowSide(
   if (cachedParsed !== undefined) return cachedParsed;
 
   const parsed = side === 'base'
-    ? parseWorkbookRow(row.left?.base ?? null)
-    : parseWorkbookRow(row.right?.mine ?? null);
+    ? parseWorkbookRow(row.left, 'base')
+    : parseWorkbookRow(row.right, 'mine');
 
   if (side === 'base') {
     cached.base = parsed;
@@ -70,16 +71,19 @@ function parseWorkbookSplitRowSide(
 }
 
 export function getWorkbookSplitRowNumber(row: SplitRow): number | null {
+  if (row.workbookArtifactRow) return row.workbookArtifactRow.baseRowNumber ?? row.workbookArtifactRow.mineRowNumber;
   const cached = getCachedSplitRowParse(row);
   if (cached.rowNumber !== undefined) return cached.rowNumber;
 
-  const leftParsed = parseWorkbookRow(row.left?.base ?? row.left?.mine ?? null);
+  const leftParsed = parseWorkbookRow(row.left);
   if (leftParsed) {
     cached.rowNumber = leftParsed.rowNumber;
     return leftParsed.rowNumber;
   }
 
-  const rightParsed = parseWorkbookRow(row.right?.mine ?? row.right?.base ?? null);
+  const rightParsed = row.right?.mine != null
+    ? parseWorkbookRow(row.right, 'mine')
+    : parseWorkbookRow(row.right, 'base');
   cached.rowNumber = rightParsed?.rowNumber ?? null;
   return cached.rowNumber;
 }
@@ -88,6 +92,7 @@ export function getWorkbookSideRowNumber(
   row: SplitRow,
   side: 'base' | 'mine',
 ): number | null {
+  if (row.workbookArtifactRow) return side === 'base' ? row.workbookArtifactRow.baseRowNumber : row.workbookArtifactRow.mineRowNumber;
   return parseWorkbookSplitRowSide(row, side)?.rowNumber ?? null;
 }
 
@@ -98,6 +103,7 @@ export function buildWorkbookRowEntry(
   versionLabel: string,
   visibleColumns: number[] = [],
 ): WorkbookRowEntry | null {
+  if (row.workbookArtifactRow) return row.workbookArtifactRow.provider.buildEntry(row.workbookArtifactRow, side, versionLabel, visibleColumns);
   const parsed = parseWorkbookSplitRowSide(row, side);
 
   if (!parsed) return null;
@@ -122,11 +128,13 @@ export function buildWorkbookSelectedCell(
   const visibleColumns = entry.visibleColumns.length > 0 ? entry.visibleColumns : fallbackColumns;
   const mergeRange = findWorkbookMergeRange(mergeRanges, entry.rowNumber, requestedColIndex);
   const normalizedColumn = mergeRange?.startCol ?? requestedColIndex;
-  const clampedColumn = visibleColumns.includes(normalizedColumn)
+  const clampedColumn = entry.artifactRow && visibleColumns.length === 0
+    ? Math.max(0, Math.min(normalizedColumn, entry.artifactRow.provider.descriptor.sheets.find((sheet) => sheet.id === entry.artifactRow!.sheetId)!.maxColumnCount - 1))
+    : visibleColumns.includes(normalizedColumn)
     ? normalizedColumn
     : visibleColumns[0] ?? 0;
   const colIndex = Math.max(0, clampedColumn);
-  const cell = entry.cells[colIndex] ?? { value: '', formula: '' };
+  const cell = entry.cells[colIndex] ?? (entry.artifactRow ? entry.artifactRow.provider.readCachedCell(entry.artifactRow, entry.side, colIndex) : undefined) ?? { value: '', formula: '' };
   const colLabel = getWorkbookColumnLabel(colIndex);
 
   return {
@@ -140,6 +148,7 @@ export function buildWorkbookSelectedCell(
     address: `${colLabel}${entry.rowNumber}`,
     value: cell.value,
     formula: cell.formula,
+    ...(entry.artifactRow ? { dataStatus: entry.artifactRow.provider.getCellStatus(entry.artifactRow, entry.side, colIndex) } : {}),
   };
 }
 

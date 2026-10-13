@@ -224,6 +224,7 @@ export function useWorkbookHorizontalViewportSync({
     if (!left || !right) return;
 
     let guardActive = true;
+    let timerId: number | null = null;
 
     const guardScrollLeft = (element: HTMLDivElement) => {
       if (!guardActive) return;
@@ -235,21 +236,33 @@ export function useWorkbookHorizontalViewportSync({
     const onLeftScroll = () => guardScrollLeft(left);
     const onRightScroll = () => guardScrollLeft(right);
 
+    const finishGuard = () => {
+      guardActive = false;
+      left.removeEventListener('scroll', onLeftScroll);
+      right.removeEventListener('scroll', onRightScroll);
+      window.removeEventListener('pointerdown', onUserInput, true);
+      window.removeEventListener('keydown', onUserInput, true);
+      window.removeEventListener('wheel', onUserInput, true);
+      if (timerId != null) {
+        window.clearTimeout(timerId);
+        timerId = null;
+      }
+    };
+
+    const onUserInput = (event: Event) => {
+      if (event.isTrusted) finishGuard();
+    };
+
     left.addEventListener('scroll', onLeftScroll);
     right.addEventListener('scroll', onRightScroll);
+    // Keep the initial viewport stable until the user acts. Capture input before
+    // React handles toolbar navigation so its programmatic scroll is preserved.
+    window.addEventListener('pointerdown', onUserInput, { capture: true, passive: true });
+    window.addEventListener('keydown', onUserInput, true);
+    window.addEventListener('wheel', onUserInput, { capture: true, passive: true });
+    timerId = window.setTimeout(finishGuard, 500);
 
-    const timerId = window.setTimeout(() => {
-      guardActive = false;
-      left.removeEventListener('scroll', onLeftScroll);
-      right.removeEventListener('scroll', onRightScroll);
-    }, 500);
-
-    return () => {
-      guardActive = false;
-      clearTimeout(timerId);
-      left.removeEventListener('scroll', onLeftScroll);
-      right.removeEventListener('scroll', onRightScroll);
-    };
+    return finishGuard;
   }, [leftScrollRef, rightScrollRef]);
 
   useEffect(() => {

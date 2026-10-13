@@ -1,8 +1,9 @@
 // src/components/TokenText.tsx
 import { memo, useMemo, type CSSProperties } from 'react';
 import type { Token } from '@/types';
-import { makeTokenColors } from '@/theme';
+import { getThemeTokensSnapshot, makeTokenColors } from '@/theme';
 import { useTheme } from '@/context/theme';
+import { resolveTextBackgroundSamples, resolveTextForegroundColor } from '@/utils/diff/textContrast';
 
 export interface TokenSearchRange {
   start: number;
@@ -20,6 +21,10 @@ interface TokenTextProps {
   selectionRanges?: TokenSearchRange[] | undefined;
   selectionHlBg?: string | undefined;
   selectionTextColor?: string | undefined;
+  /** Existing row/content surfaces, ordered from back to front. */
+  backgroundLayers?: readonly (string | undefined)[] | undefined;
+  /** Logical selection is painted beneath character and search highlights. */
+  selectionUnderlay?: string | undefined;
   showWhitespace?: boolean | undefined;
 }
 
@@ -82,10 +87,14 @@ const TokenText = memo(({
   selectionRanges = [],
   selectionHlBg,
   selectionTextColor,
+  backgroundLayers = [],
+  selectionUnderlay,
   showWhitespace = false,
 }: TokenTextProps) => {
   const themeKey = useTheme();
   const colors = useMemo(() => makeTokenColors(themeKey), [themeKey]);
+  const theme = useMemo(() => getThemeTokensSnapshot(themeKey), [themeKey]);
+  const baseBackgroundSamples = useMemo(() => resolveTextBackgroundSamples(theme, backgroundLayers), [theme, backgroundLayers]);
   const annotatedSegments = useMemo<AnnotatedSegment[] | null>(() => {
     if (
       searchRanges.length === 0
@@ -196,11 +205,18 @@ const TokenText = memo(({
               ? searchHlBg
               : undefined;
           const background = composeBackgroundLayers(searchBackground, selectionBackground, diffBackground);
-          const foregroundColor = segment.diffHighlighted || isSelectionOnly
+          const syntaxColor = segment.diffHighlighted || isSelectionOnly
             ? segment.color
             : segment.selectionHighlighted && selectionTextColor
               ? selectionTextColor
               : segment.color;
+          const foregroundColor = resolveTextForegroundColor(syntaxColor, theme, resolveTextBackgroundSamples(theme, [
+            ...backgroundLayers,
+            segment.selectionHighlighted ? selectionUnderlay : undefined,
+            segment.diffHighlighted ? hlBg : undefined,
+            selectionBackground,
+            searchBackground,
+          ]));
           const style: CSSProperties = {
             color: foregroundColor,
             WebkitTextFillColor: foregroundColor,
@@ -230,7 +246,7 @@ const TokenText = memo(({
             <span
               key={index}
               data-visible-whitespace={containsVisibleWhitespace ? 'true' : undefined}
-              style={{ color: segment.color, ...resolveFontStyle(segment.fontStyle) }}>
+              style={{ color: foregroundColor, ...resolveFontStyle(segment.fontStyle) }}>
               {renderedText}
             </span>
           );
@@ -245,7 +261,11 @@ const TokenText = memo(({
         <span
           key={i}
           style={{
-            color: tok.color ?? colors[tok.type] ?? colors.plain,
+            color: resolveTextForegroundColor(
+              tok.color ?? colors[tok.type] ?? colors.plain,
+              theme,
+              baseBackgroundSamples,
+            ),
             ...resolveFontStyle(tok.fontStyle),
           }}>
           {tok.text}

@@ -28,6 +28,7 @@ export interface VariableVirtualResult {
 }
 
 interface UseVariableVirtualOptions {
+  enabled?: boolean;
   overscanMin?: number;
   overscanFactor?: number;
   syncKey?: string | number | null;
@@ -188,6 +189,7 @@ export function useVariableVirtual(
   scrollRef: RefObject<HTMLDivElement | null>,
   options: UseVariableVirtualOptions = {},
 ): VariableVirtualResult {
+  const enabled = options.enabled ?? true;
   const overscanMin = options.overscanMin ?? DEFAULT_OVERSCAN_MIN;
   const overscanFactor = options.overscanFactor ?? DEFAULT_OVERSCAN_FACTOR;
   const syncKey = options.syncKey ?? null;
@@ -215,6 +217,7 @@ export function useVariableVirtual(
   const averageHeight = heights.length > 0 ? totalH / heights.length : 21;
 
   const applyRange = useCallback((nextScrollTop: number, nextViewH: number) => {
+    if (!enabled) return;
     const calcStart = getNow();
     const params: ComputeVariableRangeParams = {
       heightsLength: heights.length,
@@ -247,9 +250,10 @@ export function useVariableVirtual(
     rangeRef.current = next;
     rangeUpdateCountRef.current += 1;
     setRangeState(next);
-  }, [averageHeight, heights.length, overscanFactor, overscanMin, prefixSums, totalH]);
+  }, [averageHeight, enabled, heights.length, overscanFactor, overscanMin, prefixSums, totalH]);
 
   useEffect(() => {
+    if (!enabled) return;
     const el = scrollRef.current;
     if (!el) return;
 
@@ -267,9 +271,10 @@ export function useVariableVirtual(
     applyRange(Math.max(0, Math.round(el.scrollTop)), nextViewH);
 
     return () => ro.disconnect();
-  }, [applyRange, scrollRef]);
+  }, [applyRange, enabled, scrollRef]);
 
   useEffect(() => {
+    if (!enabled) return;
     const el = scrollRef.current;
     if (!el) return;
     let implicitFastScrollTimeout: number | null = null;
@@ -342,13 +347,14 @@ export function useVariableVirtual(
         el.removeAttribute(VIRTUAL_FAST_SCROLL_OWNER_ATTRIBUTE);
       }
     };
-  }, [applyRange, enableFastScrollSession, heights.length, prefixSums, scrollRef, totalH]);
+  }, [applyRange, enabled, enableFastScrollSession, heights.length, prefixSums, scrollRef, totalH]);
 
   useEffect(() => {
     applyRange(latestScrollTopRef.current, viewHRef.current);
   }, [applyRange]);
 
   useLayoutEffect(() => {
+    if (!enabled) return;
     if (syncKeyRef.current === syncKey) return;
     syncKeyRef.current = syncKey;
     latestScrollTopRef.current = 0;
@@ -361,7 +367,7 @@ export function useVariableVirtual(
       });
     }
     applyRange(0, viewHRef.current);
-  }, [applyRange, getScrollFollowers, scrollRef, syncKey]);
+  }, [applyRange, enabled, getScrollFollowers, scrollRef, syncKey]);
 
   const effectiveRangeState = useMemo(() => (
     syncKeyRef.current !== syncKey

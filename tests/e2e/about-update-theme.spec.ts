@@ -31,8 +31,6 @@ test('about update action keeps inverse contrast while hovered in every theme', 
         fileName: '',
         baseContent: null,
         mineContent: null,
-        baseBytes: null,
-        mineBytes: null,
       }),
       checkForAppUpdate: async () => undefined,
     } as unknown as NonNullable<typeof window.versora>;

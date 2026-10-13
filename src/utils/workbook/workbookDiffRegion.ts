@@ -5,6 +5,7 @@ import type {
   WorkbookDiffRegionPatch,
   WorkbookSelectedCell,
 } from '@/types';
+import { findArtifactRegionSelectionIndex, findArtifactRegionNavigationIndex } from '@/utils/workbook/workbookArtifactProvider';
 import type { WorkbookMetadataMap } from '@/utils/workbook/workbookMeta';
 import { findWorkbookMergeRange } from '@/utils/workbook/workbookMergeLayout';
 import { buildWorkbookSplitRowCompareState } from '@/utils/workbook/workbookCompare';
@@ -654,6 +655,8 @@ export function findWorkbookDiffRegionNavigationIndex(params: {
   } = params;
 
   if (regions.length === 0) return 0;
+  const artifactIndex = findArtifactRegionNavigationIndex(regions, currentIndex, direction, activeSheetName, sheetOrder);
+  if (artifactIndex != null) return artifactIndex;
 
   const hasValidCurrentIndex = currentIndex >= 0 && currentIndex < regions.length;
   const activeRegion = hasValidCurrentIndex ? (regions[currentIndex] ?? null) : null;
@@ -793,6 +796,7 @@ export function workbookDiffRegionContainsSelection(
   selection: WorkbookSelectedCell | null,
 ): boolean {
   if (!selection || selection.kind !== 'cell' || selection.sheetName !== region.sheetName) return false;
+  if (region.artifactRegion) return region.artifactRegion.provider.containsRegion(region.artifactRegion.index, selection);
 
   return region.patches.some((patch) => {
     const hasSide = selection.side === 'base' ? patch.hasBaseSide : patch.hasMineSide;
@@ -811,5 +815,7 @@ export function findWorkbookDiffRegionIndexForSelection(
   selection: WorkbookSelectedCell | null,
 ): number {
   if (!selection || selection.kind !== 'cell') return -1;
+  const artifactIndex = findArtifactRegionSelectionIndex(regions, selection);
+  if (artifactIndex != null) return artifactIndex;
   return regions.findIndex((region) => workbookDiffRegionContainsSelection(region, selection));
 }

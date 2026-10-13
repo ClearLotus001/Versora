@@ -69,8 +69,8 @@ function collectSourceFiles(repoRoot: string, relativeDir: string): string[] {
       }
 
       if (!entry.isFile()) continue;
-      if (!/\.(ts|tsx)$/.test(entry.name)) continue;
-      if (/\.d\.ts$/.test(entry.name)) continue;
+      if (!/\.(ts|tsx|mts)$/.test(entry.name)) continue;
+      if (/\.d\.(?:ts|mts)$/.test(entry.name)) continue;
       files.push(absolutePath);
     }
   }
@@ -118,8 +118,10 @@ export function analyzeUnusedExports(
       normalizedBase,
       `${resolvedBase}.ts`,
       `${resolvedBase}.tsx`,
+      `${resolvedBase}.mts`,
       `${normalizedBase}.ts`,
       `${normalizedBase}.tsx`,
+      `${normalizedBase}.mts`,
       path.join(resolvedBase, 'index.ts'),
       path.join(resolvedBase, 'index.tsx'),
       path.join(normalizedBase, 'index.ts'),

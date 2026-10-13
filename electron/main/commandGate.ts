@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 interface QueuedCommand {
   start: () => void;
 }
@@ -35,12 +37,27 @@ export class BoundedCommandGate {
     };
   }
 
-  run<T>(task: () => Promise<T>): Promise<T> {
+  run<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (signal?.aborted) return Promise.reject(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason)));
+    const boundTask = AsyncLocalStorage.bind(task);
     return new Promise<T>((resolve, reject) => {
+      let started = false;
+      let queued: QueuedCommand | null = null;
+      const cancelQueued = () => {
+        if (started) return;
+        const index = queued ? this.queue.indexOf(queued) : -1;
+        if (index >= 0) this.queue.splice(index, 1);
+        signal?.removeEventListener('abort', cancelQueued);
+        const reason: unknown = signal?.reason;
+        reject(reason instanceof Error ? reason : new Error(String(reason)));
+      };
+      signal?.addEventListener('abort', cancelQueued, { once: true });
       const start = () => {
+        started = true;
+        signal?.removeEventListener('abort', cancelQueued);
         this.active += 1;
         void Promise.resolve()
-          .then(task)
+          .then(boundTask)
           .then(
             (value) => {
               this.release();
@@ -58,10 +75,12 @@ export class BoundedCommandGate {
         return;
       }
       if (this.queue.length >= this.maxQueue) {
+        signal?.removeEventListener('abort', cancelQueued);
         reject(new Error(this.overloadMessage));
         return;
       }
-      this.queue.push({ start });
+      queued = { start };
+      this.queue.push(queued);
     });
   }
 

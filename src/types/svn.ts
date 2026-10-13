@@ -55,6 +55,7 @@ export interface RevisionSelectionPair {
 }
 
 export interface DiffData extends DiffMeta {
+  comparisonSessionId?: string;
   isSideOrderSwapped?: boolean;
   source?: ComparisonSourceDescriptor;
   sourceIdentity?: string;
@@ -69,8 +70,6 @@ export interface DiffData extends DiffMeta {
   launchMineName?: string;
   baseContent: string | null;
   mineContent: string | null;
-  baseBytes: Uint8Array | null;
-  mineBytes: Uint8Array | null;
   analysisSnapshotsByMode?: Partial<Record<WorkbookCompareMode, DiffAnalysisSnapshot | null>> | null;
   baseWorkbookMetadata?: WorkbookMetadataMap | null;
   mineWorkbookMetadata?: WorkbookMetadataMap | null;
@@ -80,6 +79,7 @@ export interface DiffData extends DiffMeta {
   canSwitchRevisions?: boolean;
   revisionSwitchableSides?: { base: boolean; mine: boolean };
   workbookArtifactDiff?: WorkbookArtifactDiff | null;
+  workbookArtifact?: import('../../shared/workbookArtifactProtocol').WorkbookArtifactDescriptor | null;
   sourceNoticeCode?: DiffSourceNoticeCode | null;
   perf?: DiffPerformanceMetrics | null;
 }

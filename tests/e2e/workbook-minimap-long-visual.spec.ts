@@ -59,20 +59,19 @@ test('ultra-long workbook marker is visually centered without changing scroll be
     if (!(overlay instanceof HTMLCanvasElement) || !scroller) throw new Error('Mini map surface missing');
     const context = overlay.getContext('2d');
     if (!context) throw new Error('Mini map context missing');
-    const paintedRows: number[] = [];
+    let alphaMass = 0;
+    let alphaMoment = 0;
     for (let y = 0; y < overlay.height; y += 1) {
       const pixels = context.getImageData(0, y, overlay.width, 1).data;
       for (let index = 3; index < pixels.length; index += 4) {
-        if ((pixels[index] ?? 0) > 0) {
-          paintedRows.push(y);
-          break;
-        }
+        const alpha = pixels[index] ?? 0;
+        alphaMass += alpha;
+        alphaMoment += alpha * (y + 0.5);
       }
     }
-    const markerTop = paintedRows[0] ?? 0;
-    let markerBottom = markerTop + 1;
-    while (paintedRows.includes(markerBottom)) markerBottom += 1;
-    const actualCenter = (markerTop + markerBottom) / 2;
+    if (alphaMass === 0) throw new Error('Mini map diff marker missing');
+    // Fractional canvas edges have unequal alpha; their visual center is the coverage centroid.
+    const actualCenter = alphaMoment / alphaMass;
     const sourceCenter = 24 + ((changedRow - 2) * 24) + 12;
     const expectedCenter = (sourceCenter / scroller.scrollHeight) * overlay.height;
     return Math.abs(actualCenter - expectedCenter);

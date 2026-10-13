@@ -12,8 +12,6 @@ function createDiffData(overrides: Partial<DiffData> = {}): DiffData {
     fileName: '[1]新物品表.xlsm',
     baseContent: null,
     mineContent: null,
-    baseBytes: null,
-    mineBytes: null,
     baseWorkbookMetadata: null,
     mineWorkbookMetadata: null,
     revisionOptions: null,

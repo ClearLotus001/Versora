@@ -33,10 +33,10 @@ test('unchanged workbook cells bind directly to the selected light and dark them
     defaultTextColor: theme.t0,
   });
 
-  assert.equal(resolveEqual(lightTheme).background, lightTheme.bg1);
+  assert.equal(resolveEqual(lightTheme).background, lightTheme.workbookCellBg);
   assert.equal(resolveEqual(lightTheme).border, lightTheme.workbookGridBorderStrong);
   assert.equal(resolveEqual(lightTheme).textColor, lightTheme.t0);
-  assert.equal(resolveEqual(darkTheme).background, darkTheme.bg1);
+  assert.equal(resolveEqual(darkTheme).background, darkTheme.workbookCellBg);
   assert.equal(resolveEqual(darkTheme).border, darkTheme.workbookGridBorderStrong);
   assert.equal(resolveEqual(darkTheme).textColor, darkTheme.t0);
   assert.notEqual(resolveEqual(lightTheme).background, resolveEqual(darkTheme).background);
@@ -55,7 +55,7 @@ test('high contrast workbook cells keep a graphite surface without version tinti
     defaultTextColor: highContrastTheme.t0,
   });
 
-  assert.equal(visual.background, highContrastTheme.bg2);
+  assert.equal(visual.background, highContrastTheme.workbookCellBg);
   assert.equal(visual.border, highContrastTheme.workbookGridBorderStrong);
 });
 
@@ -204,9 +204,9 @@ test('strict-only workbook changes use the blue whitespace palette', () => {
   });
 
   assert.deepEqual(visual, {
-    background: `${lightTheme.searchHl}16`,
-    border: `${lightTheme.searchHl}66`,
-    textColor: lightTheme.searchHl,
+    background: lightTheme.whitespaceBg,
+    border: lightTheme.whitespaceBrd,
+    textColor: lightTheme.whitespaceTx,
     maskOverlay: null,
   });
 });
@@ -348,10 +348,10 @@ test('masked workbook cells preserve the normal palette and overlay', () => {
   });
 
   assert.deepEqual(visual, {
-    background: lightTheme.bg1,
+    background: lightTheme.workbookCellBg,
     border: lightTheme.workbookGridBorderStrong,
     textColor: lightTheme.t0,
-    maskOverlay: `${lightTheme.bg1}22`,
+    maskOverlay: `${lightTheme.workbookCellBg}22`,
   });
 });
 
@@ -363,13 +363,13 @@ test('compare visuals expose shared semantic hint palettes and merge continuatio
   }), 'strict-only');
 
   assert.deepEqual(getWorkbookCompareHintVisual(lightTheme, 'strict-only'), {
-    background: `${lightTheme.searchHl}14`,
-    border: `${lightTheme.searchHl}33`,
-    textColor: lightTheme.searchHl,
+    background: `${lightTheme.whitespaceBrd}14`,
+    border: `${lightTheme.whitespaceBrd}66`,
+    textColor: lightTheme.whitespaceTx,
   });
 
   assert.deepEqual(getWorkbookMergeContinuationVisual(lightTheme, lightTheme.delBrd), {
-    background: `${lightTheme.bg0}1c`,
+    background: `${lightTheme.workbookCanvasBg}1c`,
     guideStroke: `${lightTheme.delBrd}66`,
   });
 });

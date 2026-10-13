@@ -53,6 +53,10 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     chgHl: '#4b3c1d',
     chgTx: '#e9c96a',
     chgBrd: '#d09a29',
+    whitespaceBg: '#182440',
+    whitespaceHl: '#283f6a',
+    whitespaceTx: '#a9c5ff',
+    whitespaceBrd: '#7599ed',
     acc: '#8ab8e3',
     acc2: '#76c7d2',
     versionBase: '#8ab8e3',
@@ -66,6 +70,10 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     lnTx: '#85858f',
     workbookHeaderBg: '#1b2b38',
     workbookHeaderBorder: '#557085',
+    workbookCanvasBg: '#0d1015',
+    workbookCellBg: '#171b22',
+    workbookEmptyBg: '#14181f',
+    workbookMissingBg: '#202630',
     workbookGridBorder: '#26313d',
     workbookGridBorderStrong: '#3a4856',
     scrollThumb: '#2e2f34',
@@ -76,6 +84,8 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     miniVp: '#202126',
     searchHl: '#38bdf8',
     searchActiveBg: 'rgba(56, 189, 248, 0.30)',
+    textSelectionBg: 'rgba(38, 79, 120, 0.60)',
+    textSelectionEdge: 'rgba(38, 79, 120, 0.42)',
     glassBlur: 'blur(24px) saturate(1.42)',
   },
   light: {
@@ -101,6 +111,10 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     chgHl: '#f3d482',
     chgTx: '#765300',
     chgBrd: '#b47700',
+    whitespaceBg: '#e9efff',
+    whitespaceHl: '#d0ddfa',
+    whitespaceTx: '#254782',
+    whitespaceBrd: '#4b6bb5',
     acc: '#246fae',
     acc2: '#007a86',
     versionBase: '#246fae',
@@ -114,6 +128,10 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     lnTx: '#71717a',
     workbookHeaderBg: '#edf4fa',
     workbookHeaderBorder: '#9fb3c4',
+    workbookCanvasBg: '#f1f4f8',
+    workbookCellBg: '#ffffff',
+    workbookEmptyBg: '#f8fafc',
+    workbookMissingBg: '#eef2f6',
     workbookGridBorder: '#e2e8f0',
     workbookGridBorderStrong: '#cbd5e1',
     scrollThumb: '#d3d5db',
@@ -124,6 +142,8 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     miniVp: '#e2e4e8',
     searchHl: '#2563eb',
     searchActiveBg: 'rgba(37, 99, 235, 0.24)',
+    textSelectionBg: 'rgba(173, 214, 255, 0.74)',
+    textSelectionEdge: 'rgba(173, 214, 255, 0.50)',
     glassBlur: 'blur(28px) saturate(1.55)',
   },
   hc: {
@@ -149,6 +169,10 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     chgHl: '#333300',
     chgTx: '#ffff00',
     chgBrd: '#ffff00',
+    whitespaceBg: '#09162b',
+    whitespaceHl: '#18385e',
+    whitespaceTx: '#9cc4ff',
+    whitespaceBrd: '#82b4ff',
     acc: '#ffff00',
     acc2: '#00ffff',
     versionBase: '#00ffff',
@@ -162,6 +186,10 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     lnTx: '#00ffff',
     workbookHeaderBg: '#1a1a1a',
     workbookHeaderBorder: '#7a8791',
+    workbookCanvasBg: '#000000',
+    workbookCellBg: '#1a1a1a',
+    workbookEmptyBg: '#111111',
+    workbookMissingBg: '#000000',
     workbookGridBorder: '#3f4952',
     workbookGridBorderStrong: '#56616b',
     scrollThumb: '#ffffff',
@@ -172,6 +200,8 @@ const STATIC_THEME_TOKENS: Record<ThemeKey, ThemeTokens> = {
     miniVp: '#404040',
     searchHl: '#00ffff',
     searchActiveBg: 'rgba(0, 255, 255, 0.38)',
+    textSelectionBg: 'rgba(0, 255, 255, 0.76)',
+    textSelectionEdge: 'rgba(0, 255, 255, 0.56)',
     glassBlur: 'blur(0px)',
   },
 };
@@ -295,7 +325,7 @@ export function resolveThemeTokensFromCssVariables(
       tokens[field] = fallback[field];
       continue;
     }
-    tokens[field] = field === 'searchActiveBg'
+    tokens[field] = field === 'searchActiveBg' || field === 'textSelectionBg' || field === 'textSelectionEdge'
       ? rawValue
       : normalizeColorToHex(rawValue, bgRGB);
   }

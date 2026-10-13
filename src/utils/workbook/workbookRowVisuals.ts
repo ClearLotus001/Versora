@@ -54,7 +54,7 @@ export function resolveWorkbookVersionIdentityVisual(
   surface: 'body' | 'header' = 'body',
 ): WorkbookVersionIdentityVisual {
   const isHighContrast = resolveThemeAppearance(theme) === 'high-contrast';
-  if (hasSemanticDiff || isHighContrast) {
+  if (hasSemanticDiff || isHighContrast || surface === 'body') {
     return {
       overlay: null,
       rail: null,
@@ -62,9 +62,7 @@ export function resolveWorkbookVersionIdentityVisual(
     };
   }
 
-  const overlayAlpha = surface === 'header'
-    ? (isLightWorkbookTheme(theme) ? '24' : '1a')
-    : (isLightWorkbookTheme(theme) ? '12' : '0d');
+  const overlayAlpha = isLightWorkbookTheme(theme) ? '24' : '1a';
   return {
     overlay: `${resolveWorkbookVersionAccent(theme, side)}${overlayAlpha}`,
     rail: null,
@@ -127,7 +125,7 @@ export function resolveWorkbookRowSurfaceBackground(params: {
   if (isActiveSearch) return theme.searchActiveBg;
   if (isSearchMatch) return `${theme.searchHl}24`;
   if (isHeaderRow) return theme.workbookHeaderBg;
-  return theme.bg0;
+  return theme.workbookCanvasBg;
 }
 
 export function resolveWorkbookHeaderRowDividerColor(theme: ThemeTokens): string {
@@ -284,7 +282,7 @@ export function resolveWorkbookMiniMapPaint(
   if (tone === 'strict-only') {
     return {
       kind: 'solid',
-      color: theme.searchHl,
+      color: theme.whitespaceBrd,
     };
   }
 

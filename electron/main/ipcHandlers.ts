@@ -12,8 +12,22 @@ import {
   getHasPendingLaunchDiffRequest,
   getMainWindow,
   clearMainSessionCaches,
+  createComparisonSession,
+  getCurrentComparisonSessionId,
+  getPendingLaunchDiffRequestCount,
+  getPendingLaunchDiffSessionId,
+  releaseComparisonSession,
+  runInComparisonSession,
+  resolveComparisonInputPath,
+  resolveComparisonSourcePath,
 } from './state.js';
 import { clearAnalysisSnapshotCache } from './analysisSnapshotService.js';
+import { getWorkbookArtifactReader, readWorkbookArtifactSourceRows, releaseWorkbookArtifacts } from './workbookArtifactService.js';
+import { cancelWorkbookArtifactSearch, searchWorkbookArtifact } from './workbookSearchService.js';
+import type {
+  WorkbookArtifactCellsRequest, WorkbookArtifactSearchRequest,
+  WorkbookArtifactSourceRowsRequest, WorkbookArtifactViewRequest, WorkbookArtifactWindowRequest,
+} from '../../shared/workbookArtifactProtocol.js';
 import { getStartupPalette, readStartupAppearance, writeStartupAppearance } from './startupAppearance.js';
 import {
   buildDiffData,
@@ -43,6 +57,7 @@ import {
   hasActiveTwoFileVersionSession,
   loadTwoFileVersionLineBlame,
   queryTwoFileRevisionOptions,
+  swapTwoFileDiff,
 } from './twoFileVersionOperations.js';
 import {
   getLocalFileCompareValidationIssue,
@@ -60,6 +75,7 @@ import {
   queryGitRevisionOptions,
 } from './gitOperations.js';
 import type {
+  DiffData,
   LaunchContextPayload,
   RevisionOptionsQuery,
   TitleBarOverlayPayload,
@@ -70,11 +86,13 @@ import type {
 // Safe IPC handler wrapper
 // ---------------------------------------------------------------------------
 
+type InvokeHandler = (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown;
+
 function safeHandle(
   channel: string,
-  handler: (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+  handler: InvokeHandler,
 ): void {
-  ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+  const wrapped: InvokeHandler = async (event, ...args: unknown[]) => {
     try {
       return await handler(event, ...args);
     } catch (error) {
@@ -82,6 +100,47 @@ function safeHandle(
       logMainError(`ipc:${channel}`, 'handler error:', message);
       throw new Error(message, { cause: error });
     }
+  };
+  ipcMain.handle(channel, wrapped);
+}
+
+function comparisonHandle(
+  channel: string,
+  handler: (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+  mode: 'existing' | 'launch' | 'new' = 'existing',
+): void {
+  safeHandle(channel, async (event, ...args: unknown[]) => {
+    const payload = args[0] as { comparisonSessionId?: unknown } | undefined;
+    const requestedSessionId = typeof payload?.comparisonSessionId === 'string'
+      ? payload.comparisonSessionId
+      : undefined;
+    const createdSessionId = mode === 'new' && !requestedSessionId
+      ? createComparisonSession()
+      : undefined;
+    const sessionId = requestedSessionId
+      ?? createdSessionId
+      ?? (mode === 'launch' ? getPendingLaunchDiffSessionId() : undefined);
+    return runInComparisonSession(sessionId, async () => {
+      const currentSessionId = getCurrentComparisonSessionId();
+      try {
+        const result = await handler(event, ...args);
+        if (result && typeof result === 'object' && 'sourceIdentity' in result) {
+          const data = result as DiffData;
+          return {
+            ...data,
+            basePath: data.basePath === undefined ? undefined : resolveComparisonSourcePath(data.basePath),
+            minePath: data.minePath === undefined ? undefined : resolveComparisonSourcePath(data.minePath),
+            comparisonSessionId: currentSessionId,
+          };
+        }
+        return result;
+      } catch (error) {
+        if (createdSessionId) releaseComparisonSession(createdSessionId);
+        throw error;
+      } finally {
+        if (mode === 'launch') consumePendingLaunchDiffRequest(currentSessionId);
+      }
+    });
   });
 }
 
@@ -94,6 +153,7 @@ function getWindowFrameStateSnapshot() {
 function buildLaunchContextPayload(): LaunchContextPayload {
   return {
     hasDiffRequest: getHasPendingLaunchDiffRequest(),
+    pendingDiffRequestCount: getPendingLaunchDiffRequestCount(),
     isDevMode: process.env.NODE_ENV === 'development',
     usesNativeWindowControls: USE_NATIVE_WINDOW_CONTROLS,
     windowFrameState: getWindowFrameStateSnapshot(),
@@ -116,29 +176,53 @@ function buildDiagnosticReportFileName(defaultFileName?: string): string {
 // ---------------------------------------------------------------------------
 
 export function registerIpcHandlers(): void {
-  safeHandle('release-session-resources', () => {
+  safeHandle('workbook-artifact-view', (_, request) => {
+    const payload = request as WorkbookArtifactViewRequest;
+    return getWorkbookArtifactReader(payload.artifactId).getView(payload.compareMode);
+  });
+  safeHandle('workbook-artifact-window', (_, request) => {
+    const payload = request as WorkbookArtifactWindowRequest;
+    return getWorkbookArtifactReader(payload.artifactId).readWindow(payload);
+  });
+  safeHandle('workbook-artifact-cells', (_, request) => {
+    const payload = request as WorkbookArtifactCellsRequest;
+    return getWorkbookArtifactReader(payload.artifactId).readCells(payload);
+  });
+  safeHandle('workbook-artifact-source-rows', (_, request) => readWorkbookArtifactSourceRows(request as WorkbookArtifactSourceRowsRequest));
+  safeHandle('workbook-artifact-search', (_, request) => searchWorkbookArtifact(request as WorkbookArtifactSearchRequest));
+  safeHandle('workbook-artifact-cancel-search', (_, request) => {
+    const payload = request as { artifactId: string; requestId?: string };
+    return cancelWorkbookArtifactSearch(payload.artifactId, payload.requestId);
+  });
+  safeHandle('release-session-resources', async (_, ...args: unknown[]) => {
+    const payload = args[0] as { comparisonSessionId?: string } | undefined;
+    await releaseWorkbookArtifacts(payload?.comparisonSessionId);
+    if (payload?.comparisonSessionId) {
+      releaseComparisonSession(payload.comparisonSessionId);
+      return;
+    }
     clearMainSessionCaches();
     clearAnalysisSnapshotCache();
     clearActiveGitWorkingFileSession();
     clearActiveTwoFileVersionSession();
+    releaseComparisonSession();
   });
 
   safeHandle('get-launch-context', async (): Promise<LaunchContextPayload> => (
     buildLaunchContextPayload()
   ));
 
-  safeHandle('get-diff-data', async (_, ...args: unknown[]) => {
+  comparisonHandle('get-diff-data', async (_, ...args: unknown[]) => {
     const payload = args[0] as { compareMode?: WorkbookCompareMode } | undefined;
     clearActiveGitWorkingFileSession();
     clearActiveTwoFileVersionSession();
     const data = await buildDiffData({
       workbookCompareMode: payload?.compareMode ?? 'strict',
     });
-    consumePendingLaunchDiffRequest();
     return projectTransportDiffData(data);
-  });
+  }, 'launch');
 
-  safeHandle('load-revision-diff', async (_, ...args: unknown[]) => {
+  comparisonHandle('load-revision-diff', async (_, ...args: unknown[]) => {
     const payload = args[0] as {
       baseRevisionId?: string;
       mineRevisionId?: string;
@@ -158,7 +242,7 @@ export function registerIpcHandlers(): void {
     return projectTransportDiffData(data);
   });
 
-  safeHandle('load-line-blame', async (_, ...args: unknown[]) => {
+  comparisonHandle('load-line-blame', async (_, ...args: unknown[]) => {
     const payload = args[0] as {
       baseRevisionId?: string;
       mineRevisionId?: string;
@@ -168,12 +252,12 @@ export function registerIpcHandlers(): void {
       : loadSvnLineBlame(payload?.baseRevisionId, payload?.mineRevisionId);
   });
 
-  safeHandle('load-working-copy-line-blame', async (_, ...args: unknown[]) => {
+  comparisonHandle('load-working-copy-line-blame', async (_, ...args: unknown[]) => {
     const payload = args[0] as { basePath?: string; minePath?: string } | undefined;
     return loadWorkingCopyLineBlame(payload?.basePath ?? '', payload?.minePath ?? '');
   });
 
-  safeHandle('load-two-file-version-line-blame', async (_, ...args: unknown[]) => {
+  comparisonHandle('load-two-file-version-line-blame', async (_, ...args: unknown[]) => {
     const payload = args[0] as { baseRevisionId?: string; mineRevisionId?: string } | undefined;
     return loadTwoFileVersionLineBlame(
       payload?.baseRevisionId ?? '',
@@ -181,13 +265,13 @@ export function registerIpcHandlers(): void {
     );
   });
 
-  safeHandle('get-revision-options', async () => (
+  comparisonHandle('get-revision-options', async () => (
     getActiveGitWorkingFileSession()
       ? getGitRevisionOptions()
       : getRevisionOptions()
   ));
 
-  safeHandle('query-revision-options', async (_, ...args: unknown[]) => {
+  comparisonHandle('query-revision-options', async (_, ...args: unknown[]) => {
     const payload = args[0] as RevisionOptionsQuery | undefined;
     return hasActiveTwoFileVersionSession()
       ? queryTwoFileRevisionOptions(payload)
@@ -196,7 +280,7 @@ export function registerIpcHandlers(): void {
       : queryRevisionOptions(payload);
   });
 
-  safeHandle('load-workbook-compare-mode', async (_, ...args: unknown[]) => {
+  comparisonHandle('load-workbook-compare-mode', async (_, ...args: unknown[]) => {
     const payload = args[0] as {
       compareMode?: WorkbookCompareMode;
       baseRevisionId?: string;
@@ -210,7 +294,7 @@ export function registerIpcHandlers(): void {
     );
   });
 
-  safeHandle('load-workbook-metadata', async (_, ...args: unknown[]) => {
+  comparisonHandle('load-workbook-metadata', async (_, ...args: unknown[]) => {
     const payload = args[0] as {
       baseRevisionId?: string;
       mineRevisionId?: string;
@@ -240,7 +324,7 @@ export function registerIpcHandlers(): void {
     };
   });
 
-  safeHandle('load-two-file-revision-diff', async (_, ...args: unknown[]) => {
+  comparisonHandle('load-two-file-revision-diff', async (_, ...args: unknown[]) => {
     const payload = args[0] as {
       baseRevisionId?: string;
       mineRevisionId?: string;
@@ -257,6 +341,19 @@ export function registerIpcHandlers(): void {
     return projectTransportDiffData(await buildTwoFileRevisionDiffData(
       payload?.baseRevisionId ?? '',
       payload?.mineRevisionId ?? '',
+      payload?.compareMode ?? 'strict',
+    ));
+  });
+
+  comparisonHandle('swap-two-file-diff', async (_, ...args: unknown[]) => {
+    const payload = args[0] as {
+      baseRevisionId?: string | null;
+      mineRevisionId?: string | null;
+      compareMode?: WorkbookCompareMode;
+    } | undefined;
+    return projectTransportDiffData(await swapTwoFileDiff(
+      payload?.baseRevisionId,
+      payload?.mineRevisionId,
       payload?.compareMode ?? 'strict',
     ));
   });
@@ -287,7 +384,7 @@ export function registerIpcHandlers(): void {
     };
   });
 
-  safeHandle('load-dev-working-copy-diff', async (_, ...args: unknown[]) => {
+  comparisonHandle('load-dev-working-copy-diff', async (_, ...args: unknown[]) => {
     const payload = args[0] as {
       filePath?: string;
       compareMode?: WorkbookCompareMode;
@@ -297,9 +394,9 @@ export function registerIpcHandlers(): void {
       payload?.filePath ?? '',
       payload?.compareMode ?? 'strict',
     ));
-  });
+  }, 'new');
 
-  safeHandle('load-local-diff', async (_, ...args: unknown[]) => {
+  comparisonHandle('load-local-diff', async (_, ...args: unknown[]) => {
     const payload = args[0] as {
       basePath?: string;
       minePath?: string;
@@ -307,21 +404,21 @@ export function registerIpcHandlers(): void {
     } | undefined;
     clearActiveGitWorkingFileSession();
     return projectTransportDiffData(await buildSmartLocalFileDiffData(
-      payload?.basePath ?? '',
-      payload?.minePath ?? '',
+      resolveComparisonInputPath(payload?.basePath ?? ''),
+      resolveComparisonInputPath(payload?.minePath ?? ''),
       payload?.compareMode ?? 'strict',
     ));
-  });
+  }, 'new');
 
-  safeHandle('load-local-file-diff', async (_, ...args: unknown[]) => {
+  comparisonHandle('load-local-file-diff', async (_, ...args: unknown[]) => {
     const payload = args[0] as {
       basePath?: string;
       minePath?: string;
       compareMode?: WorkbookCompareMode;
     } | undefined;
     const paths = resolveLocalFileComparePaths(
-      payload?.basePath ?? '',
-      payload?.minePath ?? '',
+      resolveComparisonInputPath(payload?.basePath ?? ''),
+      resolveComparisonInputPath(payload?.minePath ?? ''),
     );
     const issue = getLocalFileCompareValidationIssue(paths);
     if (issue === 'missing-files') {
@@ -339,7 +436,7 @@ export function registerIpcHandlers(): void {
       paths.minePath,
       payload?.compareMode ?? 'strict',
     ));
-  });
+  }, 'new');
 
   safeHandle('get-svn-diff-viewer-status', async () => getSvnDiffViewerStatus());
 

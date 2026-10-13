@@ -215,7 +215,7 @@ export default function WorkbookCompareFastScrollViewport({
         height: bodyViewportHeight,
         overflow: 'hidden',
         pointerEvents: 'none',
-        background: 'var(--bg0)',
+        background: 'var(--workbook-canvas-bg)',
         opacity: viewportState.settling ? 0 : 1,
         transition: 'opacity 90ms ease-out',
         willChange: 'opacity',
@@ -239,7 +239,7 @@ export default function WorkbookCompareFastScrollViewport({
                   left: 0,
                   width: viewportWidth,
                   height: segment.height,
-                  background: 'var(--bg1)',
+                  background: 'var(--workbook-cell-bg)',
                   borderBottom: '1px solid var(--border)',
                 }}
               />
@@ -270,7 +270,7 @@ export default function WorkbookCompareFastScrollViewport({
                   left: 0,
                   width: viewportWidth,
                   height: segment.height,
-                  background: 'var(--bg1)',
+                  background: 'var(--workbook-cell-bg)',
                   borderBottom: '1px solid var(--border)',
                 }}
               />

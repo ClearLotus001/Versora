@@ -264,16 +264,34 @@ pub(super) fn parse_text_cell_attrs(
     event: &BytesStart<'_>,
     fallback_column: usize,
 ) -> (Option<usize>, TextCellType) {
+    parse_text_cell_attrs_checked(event, fallback_column).unwrap_or((None, TextCellType::Other))
+}
+
+pub(super) fn parse_text_cell_attrs_checked(
+    event: &BytesStart<'_>,
+    fallback_column: usize,
+) -> io::Result<(Option<usize>, TextCellType)> {
     let mut column = Some(fallback_column.clamp(1, MAX_WORKBOOK_COLUMN_COUNT));
     let mut cell_type = TextCellType::Other;
 
-    for attribute in event.attributes().flatten() {
+    for attribute in event.attributes() {
+        let attribute = attribute.map_err(io::Error::other)?;
+        let decoded;
+        let value = if attribute.value.contains(&b'&') {
+            decoded = quick_xml::escape::unescape(
+                std::str::from_utf8(attribute.value.as_ref()).map_err(io::Error::other)?,
+            )
+            .map_err(io::Error::other)?;
+            decoded.as_bytes()
+        } else {
+            attribute.value.as_ref()
+        };
         match attribute.key.as_ref() {
             b"r" => {
-                column = parse_column_number_from_ref_bytes(attribute.value.as_ref());
+                column = parse_column_number_from_ref_bytes(value);
             }
             b"t" => {
-                cell_type = match attribute.value.as_ref() {
+                cell_type = match value {
                     b"s" => TextCellType::SharedString,
                     b"inlineStr" => TextCellType::InlineString,
                     b"b" => TextCellType::Bool,
@@ -285,7 +303,7 @@ pub(super) fn parse_text_cell_attrs(
         }
     }
 
-    (column, cell_type)
+    Ok((column, cell_type))
 }
 
 pub(super) fn build_scanned_cell_snapshot(

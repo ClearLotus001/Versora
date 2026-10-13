@@ -31,6 +31,8 @@
 
 进入差异视图后，可切换布局、搜索内容、跳转差异块；当文件来自 Git 或 SVN 时，还可以通过顶部版本选择器查看历史版本。
 
+每次打开比较都会新增一个文件标签页。在标签栏中可切换或关闭比较；切回已打开的文件时，会恢复它的版本、搜索、布局、滚动位置和工作表状态，无需重新加载。点击 **新增比较** 或 **首页** 可继续打开文件，并保留已有标签。
+
 ## 功能概览
 
 ### 文本比较
@@ -86,6 +88,8 @@
 
 在 Windows 安装版首页选择 **接入 TortoiseSVN**，再按需要选择全部文件、仅文本或仅工作簿模式。配置完成后，从 TortoiseSVN 发起的对应文件比较会直接在 Versora 中打开。
 
+从 **Show log** 连续打开不同文件的差异时，Versora 会在同一窗口新增标签页，已有比较不会被覆盖。标签页保留到关闭该标签或退出程序。
+
 ## 支持范围与项目边界
 
 | 项目 | 当前支持 |
@@ -106,9 +110,9 @@ Versora 当前专注于**审阅变化**，暂不包含目录树比较、三方�
 - Windows
 - Node.js 24+
 - npm
-- Rust stable（工作簿原生加速、完整验证和 Windows 安装包构建需要）
+- Rust stable（工作簿解析与比较、完整验证和 Windows 安装包构建需要）
 
-没有 Rust 时，`npm run dev:app` 仍可使用 JavaScript 后备路径启动，但大型工作簿的加载速度会较慢。
+桌面工作簿使用 Rust 解析与比较，并通过磁盘索引按需读取数据。`npm run dev:app` 启动前需要可用的原生解析器；产物缺失时会尝试构建，构建失败会报告错误并停止启动。
 
 ### 启动开发环境
 
@@ -119,7 +123,9 @@ npm ci
 npm run dev:app
 ```
 
-`dev:app` 会启动 Vite、Electron 和 Electron 主进程的监听编译；如果本机已安装 Rust 且原生产物缺失，它也会先构建工作簿解析器。
+`dev:app` 会先检查或构建工作簿解析器，再启动 Vite、Electron 和 Electron 主进程的监听编译。
+
+npm 12 需要先批准依赖的安装脚本；本项目已在 `package.json` 中批准 Electron 和 esbuild。如果依赖是在批准前安装的，启动时出现 `Electron failed to install correctly`，请运行 `npm rebuild electron esbuild`，然后重新运行 `npm run dev:app`。
 
 ### 常用命令
 

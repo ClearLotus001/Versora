@@ -54,6 +54,16 @@ pub struct WorkbookRowEntry {
     pub cells: Vec<WorkbookCellSnapshotJson>,
 }
 
+pub(crate) trait RowSignature {
+    fn signature(&self, compare_mode: &str) -> &str;
+}
+
+impl RowSignature for WorkbookRowEntry {
+    fn signature(&self, compare_mode: &str) -> &str {
+        WorkbookRowEntry::signature(self, compare_mode)
+    }
+}
+
 impl WorkbookRowEntry {
     pub fn signature(&self, compare_mode: &str) -> &str {
         if compare_mode == "content" {
@@ -183,12 +193,31 @@ pub struct WorkbookDiffPerfJson {
 }
 
 pub fn normalize_field(value: &str) -> String {
-    value
-        .replace("\r\n", "\n")
-        .replace('\r', "\n")
-        .replace('\n', " / ")
-        .replace('\t', "    ")
-        .replace(FORMULA_SEPARATOR, " ")
+    let Some(first_special) = value
+        .bytes()
+        .position(|byte| matches!(byte, b'\r' | b'\n' | b'\t' | 0x1F))
+    else {
+        return value.to_owned();
+    };
+
+    let mut normalized = String::with_capacity(value.len());
+    normalized.push_str(&value[..first_special]);
+    let mut remaining = value[first_special..].chars().peekable();
+    while let Some(character) = remaining.next() {
+        match character {
+            '\r' => {
+                if remaining.peek() == Some(&'\n') {
+                    remaining.next();
+                }
+                normalized.push_str(" / ");
+            }
+            '\n' => normalized.push_str(" / "),
+            '\t' => normalized.push_str("    "),
+            FORMULA_SEPARATOR => normalized.push(' '),
+            _ => normalized.push(character),
+        }
+    }
+    normalized
 }
 
 pub fn format_cell(cell: &Data) -> String {
@@ -350,4 +379,49 @@ pub fn parse_merge_range(range_ref: &str) -> Option<WorkbookMergeRange> {
 
 pub fn is_truthy_flag(value: &str) -> bool {
     matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn original_normalize_field(value: &str) -> String {
+        value
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .replace('\n', " / ")
+            .replace('\t', "    ")
+            .replace(FORMULA_SEPARATOR, " ")
+    }
+
+    #[test]
+    fn normalization_preserves_mixed_unicode_and_adjacent_control_characters() {
+        for value in [
+            "",
+            "普通内容 🧮 + SUM(A1:A2)",
+            "中文\r\n下一行\r末行\n\t\u{1F}🧮",
+            "\r\r\n\n\t\t\u{1F}\u{1F}",
+            "  \t \r\n \u{1F} ",
+        ] {
+            assert_eq!(normalize_field(value), original_normalize_field(value));
+        }
+    }
+
+    #[test]
+    fn normalization_matches_original_for_all_short_control_character_sequences() {
+        let alphabet = ['a', '中', '🧮', '\r', '\n', '\t', FORMULA_SEPARATOR];
+        let mut sequences = vec![String::new()];
+        for _ in 0..5 {
+            let mut next = Vec::new();
+            for sequence in sequences {
+                for character in alphabet {
+                    let mut value = sequence.clone();
+                    value.push(character);
+                    assert_eq!(normalize_field(&value), original_normalize_field(&value));
+                    next.push(value);
+                }
+            }
+            sequences = next;
+        }
+    }
 }

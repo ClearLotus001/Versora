@@ -48,11 +48,11 @@ function runCargo(args: string[]): void {
 }
 
 if (task === 'all' || task === 'fmt') {
-  runCargo(['fmt', '--manifest-path', manifestPath, '--check']);
+  runCargo(['fmt', '--manifest-path', manifestPath, '--all', '--check']);
   if (process.exitCode) process.exit(process.exitCode);
 }
 
 if (task === 'all' || task === 'clippy') {
-  runCargo(['clippy', '--manifest-path', manifestPath, '--', '-D', 'warnings']);
+  runCargo(['clippy', '--manifest-path', manifestPath, '--workspace', '--all-targets', '--', '-D', 'warnings']);
   if (process.exitCode) process.exit(process.exitCode);
 }

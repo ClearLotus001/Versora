@@ -1,6 +1,8 @@
 import type { WorkbookArtifactDiffSummary } from '../workbookArtifactDiff.js';
 import type { AppUpdateState } from '../updater/types.js';
 import type { ComparisonSourceDescriptor } from '../../shared/comparison.js';
+import type { CompactTextSplitRowDescriptors } from '../../shared/textSplitRowTransport.js';
+import type { WorkbookArtifactDescriptor } from '../../shared/workbookArtifactProtocol.js';
 
 export type SvnRevisionSourceKind = 'revision' | 'working-copy' | 'input-file';
 export type WorkbookCompareMode = 'strict' | 'content';
@@ -9,7 +11,6 @@ export type CompareContext =
   | 'literal_two_file_compare'
   | 'revision_vs_revision_compare'
   | 'git_compare';
-export type WorkbookSectionChangeType = 'equal' | 'add' | 'delete' | 'rename';
 
 export interface SvnRevisionInfo {
   id: string;
@@ -107,8 +108,6 @@ export interface DiffPerformanceMetrics {
   mainLoadMs?: number;
   baseReadMs?: number;
   mineReadMs?: number;
-  baseParserMs?: number;
-  mineParserMs?: number;
   metadataMs?: number;
   diffMs?: number;
   rustDiffMs?: number;
@@ -119,6 +118,7 @@ export interface DiffPerformanceMetrics {
 export interface PreparedTextAnalysis {
   diffLines: DiffLine[];
   compactDiffLines?: CompactTextDiffLines;
+  compactSplitRowDescriptors?: CompactTextSplitRowDescriptors;
   stats: {
     add: number;
     del: number;
@@ -130,6 +130,8 @@ export interface PreparedTextAnalysis {
 }
 
 export interface DiffData {
+  workbookArtifact?: WorkbookArtifactDescriptor;
+  comparisonSessionId?: string;
   source?: ComparisonSourceDescriptor;
   baseName: string;
   mineName: string;
@@ -147,8 +149,6 @@ export interface DiffData {
   launchMineName: string;
   baseContent: string | null;
   mineContent: string | null;
-  baseBytes: Uint8Array | null;
-  mineBytes: Uint8Array | null;
   analysisSnapshotsByMode: Partial<Record<WorkbookCompareMode, DiffAnalysisSnapshot | null>> | null;
   baseWorkbookMetadata: WorkbookMetadataMap | null;
   mineWorkbookMetadata: WorkbookMetadataMap | null;
@@ -167,6 +167,7 @@ export interface WindowFrameState {
 }
 
 export interface LaunchContextPayload {
+  pendingDiffRequestCount?: number;
   hasDiffRequest: boolean;
   isDevMode: boolean;
   usesNativeWindowControls: boolean;
@@ -183,31 +184,15 @@ export interface BuildDiffDataOptions {
   revisionOptionsOverride?: SvnRevisionInfo[] | null;
 }
 
-export interface ReadFilePayloadOptions {
-  includeWorkbookText?: boolean;
-  includeWorkbookBytes?: boolean;
-  includeWorkbookMetadata?: boolean;
-}
-
 export interface WorkbookCompareModePayload {
   compareMode: WorkbookCompareMode;
-  analysisSnapshot?: DiffAnalysisSnapshot | null;
+  workbookArtifact?: WorkbookArtifactDescriptor;
   perf: Pick<DiffPerformanceMetrics, 'rustDiffMs'> | null;
-}
-
-export interface ResolvedWorkbookCompareModePayload {
-  compareMode: WorkbookCompareMode;
-  diffLines: DiffLine[] | null;
-  workbookDelta: WorkbookPrecomputedDeltaPayload | null;
-  baseMetadata?: WorkbookMetadataMap | null;
-  mineMetadata?: WorkbookMetadataMap | null;
-  perf: Pick<DiffPerformanceMetrics, 'rustDiffMs' | 'metadataMs'> | null;
 }
 
 export interface WorkbookMetadataPayload {
   base: WorkbookMetadataMap | null;
   mine: WorkbookMetadataMap | null;
-  analysisSnapshot?: DiffAnalysisSnapshot | null;
   perf: Pick<DiffPerformanceMetrics, 'metadataMs'> | null;
 }
 
@@ -224,22 +209,6 @@ export interface WorkbookMergeRange {
   endCol: number;
 }
 
-export interface WorkbookSection {
-  name: string;
-  displayName: string;
-  changeType: WorkbookSectionChangeType;
-  hasBaseSide: boolean;
-  hasMineSide: boolean;
-  renamePeerName: string | null;
-  renameRole: 'source' | 'target' | null;
-  startLineIdx: number;
-  endLineIdx: number;
-  maxColumns: number;
-  rowCount: number;
-  firstDataLineIdx: number | null;
-  firstDataRowNumber: number | null;
-}
-
 export interface WorkbookSheetMetadata {
   name: string;
   hiddenColumns: number[];
@@ -252,147 +221,19 @@ export interface WorkbookMetadataMap {
   sheets: Record<string, WorkbookSheetMetadata>;
 }
 
-export interface WorkbookCellSnapshot {
-  value: string;
-  formula: string;
-}
-
-export interface WorkbookSelectedCell {
-  kind: 'cell' | 'row' | 'column';
-  sheetName: string;
-  side: 'base' | 'mine';
-  versionLabel: string;
-  rowNumber: number;
-  colIndex: number;
-  colLabel: string;
-  address: string;
-  value: string;
-  formula: string;
-}
-
-export type WorkbookCellDeltaKind = 'equal' | 'add' | 'delete' | 'modify';
-export type WorkbookRowDeltaTone = 'equal' | 'add' | 'delete' | 'mixed';
-export type WorkbookRowMiniMapTone = 'equal' | 'add' | 'delete' | 'modify' | 'strict-only' | 'mixed';
-export type WorkbookRowMiniMapPaintTone = Exclude<WorkbookRowMiniMapTone, 'equal' | 'mixed'>;
-
-export interface WorkbookCellDeltaPayload {
-  column: number;
-  baseCell: WorkbookCellSnapshot;
-  mineCell: WorkbookCellSnapshot;
-  changed: boolean;
-  masked: boolean;
-  strictOnly: boolean;
-  kind: WorkbookCellDeltaKind;
-  hasBaseContent: boolean;
-  hasMineContent: boolean;
-  hasContent: boolean;
-}
-
-export interface WorkbookRowDeltaPayload {
-  lineIdx: number;
-  lineIdxs: number[];
-  leftLineIdx: number | null;
-  rightLineIdx: number | null;
-  baseRowNumber?: number | null;
-  mineRowNumber?: number | null;
-  cellDeltas: WorkbookCellDeltaPayload[];
-  changedColumns: number[];
-  strictOnlyColumns: number[];
-  changedCount: number;
-  hasChanges: boolean;
-  tone: WorkbookRowDeltaTone;
-  miniMapTone?: WorkbookRowMiniMapTone;
-  miniMapPaintTones?: WorkbookRowMiniMapPaintTone[];
-  structuralChange?: 'add' | 'delete';
-}
-
-export interface WorkbookSectionDeltaPayload {
-  name: string;
-  hasBaseSide?: boolean;
-  hasMineSide?: boolean;
-  startLineIdx?: number | null;
-  endLineIdx?: number | null;
-  maxColumns?: number | null;
-  rowCount?: number | null;
-  firstDataLineIdx?: number | null;
-  firstDataRowNumber?: number | null;
-  rows: WorkbookRowDeltaPayload[];
-}
-
-export interface WorkbookPrecomputedDeltaPayload {
-  compareMode: WorkbookCompareMode;
-  sections: WorkbookSectionDeltaPayload[];
-}
-
-export interface WorkbookDiffRegionPatch {
-  startRowIndex: number;
-  endRowIndex: number;
-  startCol: number;
-  endCol: number;
-  baseRowStart: number | null;
-  baseRowEnd: number | null;
-  mineRowStart: number | null;
-  mineRowEnd: number | null;
-  hasBaseSide: boolean;
-  hasMineSide: boolean;
-  lineIdxs?: number[];
-}
-
-export interface WorkbookDiffRegion {
-  id: string;
-  sheetName: string;
-  startRowIndex: number;
-  endRowIndex: number;
-  startCol: number;
-  endCol: number;
-  rowNumberStart: number;
-  rowNumberEnd: number;
-  lineStartIdx: number;
-  lineEndIdx: number;
-  anchorLineIdx: number;
-  hasBaseSide: boolean;
-  hasMineSide: boolean;
-  anchorSelection: WorkbookSelectedCell | null;
-  patches: WorkbookDiffRegionPatch[];
-}
-
-export interface PreparedWorkbookAnalysis {
-  diffLinesByMode: Partial<Record<WorkbookCompareMode, DiffLine[] | null>>;
-  workbookDeltaByMode: Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>>;
-  sectionsByMode?: Partial<Record<WorkbookCompareMode, WorkbookSection[] | null>>;
-  navigationRegionsByMode?: Partial<Record<WorkbookCompareMode, WorkbookDiffRegion[] | null>>;
-  metadata: {
-    base: WorkbookMetadataMap | null;
-    mine: WorkbookMetadataMap | null;
-  };
-  artifactDiff: WorkbookArtifactDiffSummary | null;
-  perf: Pick<DiffPerformanceMetrics, 'metadataMs' | 'rustDiffMs'> | null;
-}
-
 export interface DiffAnalysisSnapshot {
   compareMode: WorkbookCompareMode;
   textAnalysis: PreparedTextAnalysis | null;
-  workbookAnalysis: PreparedWorkbookAnalysis | null;
 }
 
 export interface FilePayloadMetrics {
   readMs: number;
-  parserMs: number;
-  metadataMs: number;
   byteLength: number;
 }
 
 export interface FilePayload {
   content: string | null;
-  bytes: Uint8Array | null;
-  metadata: WorkbookMetadataMap | null;
   perf: FilePayloadMetrics;
-}
-
-export interface WorkbookPayloadCoverage {
-  text: boolean;
-  bytes: boolean;
-  metadata: boolean;
 }
 
 export interface FilePayloadCacheEntry {
@@ -400,94 +241,14 @@ export interface FilePayloadCacheEntry {
   size: number;
   payload: FilePayload;
   memoryBytes: number;
-  coverage: WorkbookPayloadCoverage;
 }
 
 export interface RevisionPayloadCacheEntry {
   payload: FilePayload;
   memoryBytes: number;
-  coverage: WorkbookPayloadCoverage;
-}
-
-export interface RustDiffLinePayload {
-  type?: unknown;
-  t?: unknown;
-  base?: unknown;
-  b?: unknown;
-  mine?: unknown;
-  m?: unknown;
-  baseLineNo?: unknown;
-  bl?: unknown;
-  mineLineNo?: unknown;
-  ml?: unknown;
-}
-
-export interface RustWorkbookDiffPayload {
-  diffLines?: unknown;
-  d?: unknown;
-  workbookDelta?: unknown;
-  w?: unknown;
-  baseMetadata?: unknown;
-  mb?: unknown;
-  mineMetadata?: unknown;
-  mm?: unknown;
-  perf?: unknown;
-  p?: unknown;
 }
 
 export type XmlNode = Record<string, unknown>;
-
-export interface LocalWorkbookPairCacheContext {
-  key: string;
-  leftPath: string;
-  rightPath: string;
-  leftMtimeMs: number;
-  rightMtimeMs: number;
-  leftSize: number;
-  rightSize: number;
-}
-
-export interface FileEqualityCacheEntry {
-  leftPath: string;
-  rightPath: string;
-  leftMtimeMs: number;
-  rightMtimeMs: number;
-  leftSize: number;
-  rightSize: number;
-  equal: boolean;
-}
-
-export interface InlineWorkbookCompareCachePayload {
-  kind: 'inline';
-  value: ResolvedWorkbookCompareModePayload;
-}
-
-export interface CompressedWorkbookCompareCachePayload {
-  kind: 'gzip-json-v1';
-  bytes: Buffer;
-}
-
-export type StoredWorkbookCompareCachePayload =
-  | InlineWorkbookCompareCachePayload
-  | CompressedWorkbookCompareCachePayload;
-
-export interface WorkbookCompareCacheEntry {
-  leftMtimeMs: number;
-  rightMtimeMs: number;
-  leftSize: number;
-  rightSize: number;
-  payload: StoredWorkbookCompareCachePayload;
-  memoryBytes: number;
-}
-
-export interface WorkbookMetadataCacheEntry {
-  leftMtimeMs: number;
-  rightMtimeMs: number;
-  leftSize: number;
-  rightSize: number;
-  payload: WorkbookMetadataPayload;
-  memoryBytes: number;
-}
 
 export { type WorkbookArtifactDiffSummary } from '../workbookArtifactDiff.js';
 export { type CliArgs } from '../cliArgs.js';

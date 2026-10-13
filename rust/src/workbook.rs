@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::{hash_map::DefaultHasher, BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, BufWriter, Read, Write};
 use std::path::Path;
 
 use calamine::{open_workbook_auto, Data, Range, Reader};
@@ -22,6 +22,8 @@ use crate::profile;
 
 const MAX_WORKBOOK_XML_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
 
+#[path = "workbook/artifact.rs"]
+mod artifact;
 #[path = "workbook/context.rs"]
 mod context;
 #[path = "workbook/metadata.rs"]
@@ -32,6 +34,8 @@ mod rows;
 mod scan;
 #[path = "workbook/shared_strings.rs"]
 mod shared_strings;
+
+pub(crate) use artifact::prepare_workbook_artifact;
 
 pub(crate) use self::context::ZipWorkbookContext;
 use self::context::{collect_visible_sheet_infos, SheetSemanticFingerprint};
@@ -273,7 +277,7 @@ pub fn write_workbook_text(file_path: &str) -> io::Result<()> {
         .map(|infos| infos.into_iter().map(|info| info.name).collect::<Vec<_>>())
         .unwrap_or_else(|| workbook.sheet_names().to_owned());
     let stdout = io::stdout();
-    let mut handle = stdout.lock();
+    let mut handle = BufWriter::with_capacity(64 * 1024, stdout.lock());
 
     for (index, sheet_name) in sheet_names.iter().enumerate() {
         match workbook.worksheet_range(sheet_name) {
@@ -301,7 +305,7 @@ pub fn write_workbook_text(file_path: &str) -> io::Result<()> {
         }
     }
 
-    Ok(())
+    handle.flush()
 }
 
 pub fn write_workbook_metadata_json(file_path: &str) -> io::Result<()> {
@@ -309,8 +313,8 @@ pub fn write_workbook_metadata_json(file_path: &str) -> io::Result<()> {
         sheets: BTreeMap::new(),
     });
     let stdout = io::stdout();
-    let mut handle = stdout.lock();
+    let mut handle = BufWriter::with_capacity(64 * 1024, stdout.lock());
     serde_json::to_writer(&mut handle, &metadata)
         .map_err(|error| io::Error::other(error.to_string()))?;
-    Ok(())
+    handle.flush()
 }

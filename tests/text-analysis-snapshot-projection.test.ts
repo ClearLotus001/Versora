@@ -11,8 +11,6 @@ import {
   filePayloadCache,
   revisionPayloadCache,
   setActiveCliArgs,
-  workbookCompareCache,
-  workbookMetadataCache,
 } from '../electron/main/state';
 
 test('local text diff projects main-side prepared analysis while preserving raw text payloads', async () => {
@@ -39,8 +37,7 @@ test('local text diff projects main-side prepared analysis while preserving raw 
   } finally {
     filePayloadCache.clear();
     revisionPayloadCache.clear();
-    workbookCompareCache.clear();
-    workbookMetadataCache.clear();
+
     clearAnalysisSnapshotCache();
     setActiveCliArgs(EMPTY_CLI_ARGS);
     await fs.rm(tempDir, { recursive: true, force: true });

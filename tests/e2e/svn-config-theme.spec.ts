@@ -46,8 +46,6 @@ async function loadSvnConfigFixture(page: Page) {
           fileName: '',
           baseContent: null,
           mineContent: null,
-          baseBytes: null,
-          mineBytes: null,
         }),
         getSvnDiffViewerStatus: async () => status,
         configureSvnDiffViewer: async () => status,

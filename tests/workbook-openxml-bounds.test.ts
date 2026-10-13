@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 
 import { strToU8, zipSync } from 'fflate';
 
-import { workbookBytesToText } from '../src/utils/diff/diffSource';
+import { workbookBytesToText } from './fixtures/workbookSourceOracle';
 import { parseWorkbookDisplayLine } from '../src/utils/workbook/workbookDisplay';
-import { parseWorkbookMetadata } from '../src/utils/workbook/workbookMeta';
+import { parseWorkbookMetadata } from './fixtures/workbookMetadataOracle';
 
 function buildWorkbookZipWithOutOfBoundsRefs() {
   return zipSync({

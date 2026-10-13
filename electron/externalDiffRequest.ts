@@ -1,6 +1,10 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import { EMPTY_CLI_ARGS, type CliArgs } from './cliArgs';
+import { copyToManagedTempFileSync } from './runtimePaths';
+import { logMainWarn } from './logging';
 
 export interface ExternalDiffRequestPayload {
   version?: unknown;
@@ -18,6 +22,36 @@ export interface ExternalDiffRequestPayload {
 
 export const EXTERNAL_DIFF_REQUEST_FLAG = '--external-diff-request';
 const EXTERNAL_DIFF_REQUEST_VERSION = 1;
+
+export function preserveExternalDiffTempInputsSync(cliArgs: CliArgs): CliArgs {
+  const preservedPaths = new Map<string, string>();
+  const preservePath = (filePath: string): string => {
+    if (!filePath) return filePath;
+    const resolvedPath = path.resolve(filePath);
+    const relativePath = path.relative(os.tmpdir(), resolvedPath);
+    if (path.isAbsolute(relativePath) || relativePath === '..' || relativePath.startsWith(`..${path.sep}`)) {
+      return filePath;
+    }
+    const preservedPath = preservedPaths.get(resolvedPath);
+    if (preservedPath) return preservedPath;
+    try {
+      const copiedPath = copyToManagedTempFileSync('external-input', resolvedPath);
+      preservedPaths.set(resolvedPath, copiedPath);
+      return copiedPath;
+    } catch (error) {
+      logMainWarn('external-diff', 'unable to preserve temporary input', { filePath, error });
+      return filePath;
+    }
+  };
+  return {
+    ...cliArgs,
+    basePath: preservePath(cliArgs.basePath),
+    minePath: preservePath(cliArgs.minePath),
+    baseName: /^base$/i.test(cliArgs.baseName) ? path.basename(cliArgs.basePath) : cliArgs.baseName,
+    mineName: /^mine$/i.test(cliArgs.mineName) ? path.basename(cliArgs.minePath) : cliArgs.mineName,
+    fileName: cliArgs.fileName || path.basename(cliArgs.minePath || cliArgs.basePath),
+  };
+}
 
 function normalizeToken(value: unknown): string {
   if (typeof value !== 'string') return '';

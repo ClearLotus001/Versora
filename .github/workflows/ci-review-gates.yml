@@ -109,6 +109,9 @@ jobs:
       - name: Build and lint Rust parser
         run: npm run verify:rust
 
+      - name: Run Rust workspace unit tests
+        run: cargo test --manifest-path rust/Cargo.toml --workspace --bins --lib
+
       - name: Run Rust-backed workbook tests
         run: npm run test:workbook:rust
 

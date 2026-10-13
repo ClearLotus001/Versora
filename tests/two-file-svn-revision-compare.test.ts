@@ -20,6 +20,7 @@ import { loadSvnLineBlame, queryRevisionOptions } from '../electron/main/svnOper
 import { loadWorkingCopyLineBlame } from '../electron/main/workingCopyLineBlame';
 import { setActiveCliArgs } from '../electron/main/state';
 import { EMPTY_CLI_ARGS } from '../electron/cliArgs';
+import { getWorkbookArtifactReader, releaseWorkbookArtifacts } from '../electron/main/workbookArtifactService';
 import {
   cleanupManagedTempFilesOnExitSync,
   configureRuntimePaths,
@@ -211,10 +212,13 @@ test('two working-copy files default to their independent latest revisions and r
     const workbookDiff = await buildLocalDiffData(trunkWorkbook, releaseWorkbook, 'strict');
     assert.equal(workbookDiff.baseRevisionInfo?.revision, 'r4');
     assert.equal(workbookDiff.mineRevisionInfo?.revision, 'r5');
-    assert.ok((
-      workbookDiff.analysisSnapshotsByMode?.strict?.workbookAnalysis?.diffLinesByMode.strict?.length
-      ?? 0
-    ) > 0);
+    assert.ok(workbookDiff.workbookArtifact);
+    assert.equal(workbookDiff.workbookArtifact.stats.changedCells, 1);
+    const artifactWindow = await getWorkbookArtifactReader(workbookDiff.workbookArtifact.artifactId).readWindow({
+      artifactId: workbookDiff.workbookArtifact.artifactId, compareMode: 'strict', sheetId: 0, startRow: 0, rowCount: 1, columnRanges: [{ start: 0, end: 1 }],
+    });
+    assert.equal(artifactWindow.rows[0]?.baseCells[0]?.value, 'trunk workbook latest');
+    assert.equal(artifactWindow.rows[0]?.mineCells[0]?.value, 'release workbook latest');
     const contentMode = await loadWorkbookCompareModeData(
       'content',
       workbookDiff.baseRevisionInfo?.id,
@@ -224,7 +228,8 @@ test('two working-copy files default to their independent latest revisions and r
       workbookDiff.baseRevisionInfo?.id,
       workbookDiff.mineRevisionInfo?.id,
     );
-    assert.ok((contentMode.analysisSnapshot?.workbookAnalysis?.diffLinesByMode.content?.length ?? 0) > 0);
+    assert.equal(contentMode.workbookArtifact?.artifactId, workbookDiff.workbookArtifact.artifactId);
+    assert.equal(contentMode.workbookArtifact?.stats.changedCells, 1);
     assert.deepEqual(Object.keys(metadata.base?.sheets ?? {}), ['Thing']);
     assert.deepEqual(Object.keys(metadata.mine?.sheets ?? {}), ['Thing']);
 
@@ -236,6 +241,7 @@ test('two working-copy files default to their independent latest revisions and r
     assert.equal(workingCopyBlame.base[0]?.revision, 'r2');
     assert.equal(workingCopyBlame.mine[0]?.uncommitted, true);
   } finally {
+    await releaseWorkbookArtifacts();
     setActiveCliArgs(EMPTY_CLI_ARGS);
     cleanupManagedTempFilesOnExitSync();
     await fs.rm(tempDir, { recursive: true, force: true });

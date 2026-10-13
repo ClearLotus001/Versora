@@ -246,6 +246,7 @@ export interface WorkbookMetadataStatePayload {
 interface DiffSessionHydrationSlice {
   hydrateLoadedDiffSession: (payload: LoadedDiffSessionPayload) => void;
   hydrateWorkbookMetadataState: (payload: WorkbookMetadataStatePayload) => void;
+  restoreDiffSessionState: (snapshot: DiffSessionStoreSnapshot) => void;
   resetDiffSessionToHome: () => void;
 }
 
@@ -265,6 +266,64 @@ export type AppState =
   & AppUpdateSlice
   & SvnDiffViewerSlice
   & DiffSessionHydrationSlice;
+
+// Comparison tabs retain only their own data and view settings. The large diff
+// and metadata objects stay shared by reference because store updates replace
+// those values; copying them on every tab switch would duplicate entire files.
+const DIFF_SESSION_STATE_KEYS = [
+  'layout',
+  'collapseCtx',
+  'showOnlyDifferences',
+  'diffTypeFilter',
+  'showWhitespace',
+  'showHiddenColumns',
+  'workbookCompareMode',
+  'textSplitHeaderRatio',
+  'diffLines',
+  'diffSourceNoticeCode',
+  'diffSourceNoticeDismissed',
+  'workbookArtifactDiff',
+  'artifactNoticeDismissed',
+  'baseName',
+  'mineName',
+  'launchBaseName',
+  'launchMineName',
+  'fileName',
+  'searchQ',
+  'searchRx',
+  'searchCs',
+  'searchWorkbookScope',
+  'activeSearchIdx',
+  'searchJumpNonce',
+  'hunkIdx',
+  'guidedPulseNonce',
+  'compareContext',
+  'resetPair',
+  'revisionOptions',
+  'baseRevisionInfo',
+  'mineRevisionInfo',
+  'canSwitchRevisions',
+  'revisionSwitchableSides',
+  'workbookSelection',
+  'workbookHiddenStateBySheet',
+  'workbookContextMenu',
+  'workbookFreezeBySheet',
+  'workbookColumnWidthBySheet',
+  'activeWorkbookSheetName',
+  'baseWorkbookMetadata',
+  'mineWorkbookMetadata',
+] as const satisfies ReadonlyArray<keyof AppState>;
+
+export type DiffSessionStoreSnapshot = Pick<AppState, (typeof DIFF_SESSION_STATE_KEYS)[number]>;
+
+function pickDiffSessionState(state: DiffSessionStoreSnapshot): DiffSessionStoreSnapshot {
+  return Object.fromEntries(DIFF_SESSION_STATE_KEYS.map((key) => [key, state[key]])) as DiffSessionStoreSnapshot;
+}
+
+/** Capture a comparison without retaining global settings or store actions. */
+export function captureDiffSessionState(state: AppState): DiffSessionStoreSnapshot {
+  return pickDiffSessionState(state);
+}
 
 
 // ── Store Creation ──────────────────────────────────────────────────────────
@@ -426,7 +485,9 @@ export const useAppStore = create<AppState>()((set) => ({
     workbookCompareMode: payload.workbookCompareMode,
     diffLines: payload.diffLines,
     diffSourceNoticeCode: payload.diffSourceNoticeCode,
+    diffSourceNoticeDismissed: false,
     workbookArtifactDiff: payload.workbookArtifactDiff,
+    artifactNoticeDismissed: false,
     baseWorkbookMetadata: payload.baseWorkbookMetadata,
     mineWorkbookMetadata: payload.mineWorkbookMetadata,
     revisionOptions: payload.revisionOptions,
@@ -451,6 +512,7 @@ export const useAppStore = create<AppState>()((set) => ({
     baseWorkbookMetadata: payload.baseWorkbookMetadata,
     mineWorkbookMetadata: payload.mineWorkbookMetadata,
   })),
+  restoreDiffSessionState: (snapshot) => set(() => pickDiffSessionState(snapshot)),
   resetDiffSessionToHome: () => set((state) => ({
     diffTypeFilter: 'all',
     diffLines: [],

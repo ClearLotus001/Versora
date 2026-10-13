@@ -76,8 +76,6 @@ const PerfBar = memo(({ metrics }: PerfBarProps) => {
         {chip(t('perfMainLoad'), formatMs(metrics.mainLoadMs), cssVar('acc'))}
         {chip(t('perfBaseRead'), formatMs(metrics.baseReadMs), cssVar('versionBase'))}
         {chip(t('perfMineRead'), formatMs(metrics.mineReadMs), cssVar('versionMine'))}
-        {chip(t('perfBaseParse'), formatMs(metrics.baseParserMs), cssVar('versionBase'))}
-        {chip(t('perfMineParse'), formatMs(metrics.mineParserMs), cssVar('versionMine'))}
         {chip(t('perfTextResolve'), formatMs(metrics.textResolveMs), cssVar('acc2'))}
         {chip(t('perfMetadata'), formatMs(metrics.metadataMs), cssVar('acc'))}
         {chip(t('perfDiff'), formatMs(metrics.diffMs), cssVar('acc2'))}

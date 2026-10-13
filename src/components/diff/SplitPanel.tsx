@@ -99,6 +99,7 @@ import { buildWorkbookRenderItemIndexes } from '@/utils/workbook/workbookRenderI
 
 const CONTEXT_LINES = 3;
 const DOUBLE_ROW_H = (ROW_H * 2) + 1;
+const EMPTY_ITEM_HEIGHTS: number[] = [];
 const DEFAULT_SPLIT_RATIO = 0.5;
 const MIN_SPLIT_RATIO = 0.2;
 const MAX_SPLIT_RATIO = 0.8;
@@ -295,9 +296,8 @@ const SplitPanel = memo(({
     [baseItems, manualCollapsedRanges],
   );
   const itemHeights = useMemo(
-    () => items.map((item) => {
+    () => !vertical ? EMPTY_ITEM_HEIGHTS : items.map((item) => {
       if (item.kind === 'split-collapse') return ROW_H;
-      if (!vertical) return ROW_H;
       return getTextVerticalRenderMode(item.row) === 'double' ? DOUBLE_ROW_H : ROW_H;
     }),
     [items, vertical],
@@ -314,7 +314,7 @@ const SplitPanel = memo(({
   const variableVirtual = useVariableVirtual(
     itemHeights,
     activeScrollRef,
-    { overscanMin: 40, overscanFactor: 2 },
+    { enabled: vertical, overscanMin: 40, overscanFactor: 2 },
   );
   const activeVirtual = vertical ? variableVirtual : constantVirtual;
   const { totalH, startIdx, endIdx, scrollToIndex } = activeVirtual;
@@ -450,6 +450,7 @@ const SplitPanel = memo(({
     onScrollerReady,
     activeSearchLineIdx,
     searchJumpNonce,
+    initialSearchJumpNonce: layoutSnapshot ? searchJumpNonce : undefined,
   });
   const selectionAccentColor = getManualLineSelectionAccent();
   const selectedCollapseSurfaces = useMemo(

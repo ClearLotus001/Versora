@@ -3,7 +3,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
-import type { DiffLine, DiffPerformanceMetrics } from '@/types/diff';
 
 export type WorkbookMoveDirection = 'up' | 'down' | 'left' | 'right';
 export type WorkbookSelectionKind = 'cell' | 'row' | 'column';
@@ -39,6 +38,7 @@ export interface WorkbookSelectedCell {
   address: string;
   value: string;
   formula: string;
+  dataStatus?: 'pending' | 'ready' | 'error';
 }
 
 export interface WorkbookSelectionState {
@@ -98,6 +98,7 @@ export interface WorkbookDiffRegionPatch {
 }
 
 export interface WorkbookDiffRegion {
+  artifactRegion?: { provider: import('@/utils/workbook/workbookArtifactProvider').WorkbookArtifactProvider; index: number };
   id: string;
   sheetName: string;
   startRowIndex: number;
@@ -197,7 +198,6 @@ export interface WorkbookCellDelta {
 
 export interface WorkbookRowDelta {
   cellDeltas: Map<number, WorkbookCellDelta>;
-  cellDeltaPayloads?: WorkbookCellDeltaPayload[];
   changedColumns: number[];
   strictOnlyColumns: number[];
   changedCount: number;
@@ -206,52 +206,7 @@ export interface WorkbookRowDelta {
   miniMapTone?: WorkbookRowMiniMapTone;
   miniMapPaintTones?: WorkbookRowMiniMapPaintTone[];
   structuralChange?: 'add' | 'delete';
-}
-
-export interface WorkbookCellDeltaPayload extends Omit<WorkbookCellDelta, 'baseCell' | 'mineCell'> {
-  baseCell: WorkbookCellSnapshot;
-  mineCell: WorkbookCellSnapshot;
-}
-
-export interface WorkbookRowDeltaPayload extends Omit<WorkbookRowDelta, 'cellDeltas'> {
-  lineIdx: number;
-  lineIdxs: number[];
-  leftLineIdx: number | null;
-  rightLineIdx: number | null;
-  baseRowNumber?: number | null;
-  mineRowNumber?: number | null;
-  cellDeltas: WorkbookCellDeltaPayload[];
-}
-
-export interface WorkbookSectionDeltaPayload {
-  name: string;
-  hasBaseSide?: boolean;
-  hasMineSide?: boolean;
-  startLineIdx?: number | null;
-  endLineIdx?: number | null;
-  maxColumns?: number | null;
-  rowCount?: number | null;
-  firstDataLineIdx?: number | null;
-  firstDataRowNumber?: number | null;
-  rows: WorkbookRowDeltaPayload[];
-}
-
-export interface WorkbookPrecomputedDeltaPayload {
-  compareMode: WorkbookCompareMode;
-  sections: WorkbookSectionDeltaPayload[];
-}
-
-export interface PreparedWorkbookAnalysis {
-  diffLinesByMode: Partial<Record<WorkbookCompareMode, DiffLine[] | null>>;
-  workbookDeltaByMode: Partial<Record<WorkbookCompareMode, WorkbookPrecomputedDeltaPayload | null>>;
-  sectionsByMode?: Partial<Record<WorkbookCompareMode, WorkbookSection[] | null>>;
-  navigationRegionsByMode?: Partial<Record<WorkbookCompareMode, WorkbookDiffRegion[] | null>>;
-  metadata: {
-    base: WorkbookMetadataMap | null;
-    mine: WorkbookMetadataMap | null;
-  };
-  artifactDiff: WorkbookArtifactDiff | null;
-  perf?: Pick<DiffPerformanceMetrics, 'metadataMs' | 'rustDiffMs'> | null;
+  artifactSummary?: true;
 }
 
 export interface WorkbookArtifactDiff {
@@ -259,12 +214,4 @@ export interface WorkbookArtifactDiff {
   kind: 'binary-only';
   baseBytes: number;
   mineBytes: number;
-}
-
-export interface WorkbookMetadataSource {
-  baseName: string;
-  mineName: string;
-  fileName: string;
-  baseBytes: Uint8Array | null;
-  mineBytes: Uint8Array | null;
 }

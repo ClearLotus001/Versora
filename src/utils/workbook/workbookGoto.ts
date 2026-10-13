@@ -3,6 +3,7 @@ import type {
   WorkbookSelectedCell,
 } from '@/types';
 import type { WorkbookLineSheetContext } from '@/utils/workbook/workbookSections';
+import type { WorkbookArtifactDescriptor } from '../../../shared/workbookArtifactProtocol';
 
 interface WorkbookGotoRowCandidate {
   lineIdx: number;
@@ -22,6 +23,7 @@ export interface ResolveWorkbookGotoTargetParams {
   baseVersionLabel: string;
   mineVersionLabel: string;
   allowedLineIndexes?: ReadonlySet<number> | undefined;
+  artifact?: WorkbookArtifactDescriptor | undefined;
 }
 
 export interface ResolvedWorkbookGotoTarget {
@@ -115,24 +117,31 @@ export function collectWorkbookGotoRowCandidates(
 }
 
 function resolveWorkbookGotoCandidate(
-  candidates: readonly WorkbookGotoRowCandidate[],
+  candidates: Iterable<WorkbookGotoRowCandidate>,
   lineNo: number,
   preferredSide: 'base' | 'mine' | null | undefined,
 ): WorkbookGotoRowCandidate | null {
-  if (candidates.length === 0) return null;
+  let exact: WorkbookGotoRowCandidate | null = null;
+  let nearest: WorkbookGotoRowCandidate | null = null;
+  let last: WorkbookGotoRowCandidate | null = null;
+  for (const candidate of candidates) {
+    if (candidate.rowNumber === lineNo && (!exact || compareExactCandidates(candidate, exact, preferredSide) < 0)) exact = candidate;
+    if (candidate.rowNumber >= lineNo && (!nearest || compareNearestCandidates(candidate, nearest, preferredSide) < 0)) nearest = candidate;
+    if (!last || compareLastCandidates(candidate, last, preferredSide) < 0) last = candidate;
+  }
+  return exact ?? nearest ?? last;
+}
 
-  const exact = candidates
-    .filter((candidate) => candidate.rowNumber === lineNo)
-    .sort((left, right) => compareExactCandidates(left, right, preferredSide))[0];
-  if (exact) return exact;
-
-  const nearest = candidates
-    .filter((candidate) => candidate.rowNumber >= lineNo)
-    .sort((left, right) => compareNearestCandidates(left, right, preferredSide))[0];
-  if (nearest) return nearest;
-
-  return [...candidates]
-    .sort((left, right) => compareLastCandidates(left, right, preferredSide))[0] ?? null;
+function* artifactGotoCandidates(artifact: WorkbookArtifactDescriptor, sheetName: string | null, allowed?: ReadonlySet<number>): Iterable<WorkbookGotoRowCandidate> {
+  const sheet = artifact.sheets.find((item) => item.name === sheetName);
+  if (!sheet) return;
+  for (let lineIdx = sheet.pairStart; lineIdx < sheet.pairStart + sheet.pairCount; lineIdx += 1) {
+    if (allowed && !allowed.has(lineIdx)) continue;
+    const base = artifact.rows.baseRowNumbers[lineIdx]!;
+    const mine = artifact.rows.mineRowNumbers[lineIdx]!;
+    if (base) yield { lineIdx, rowNumber: base, side: 'base', sheetName: sheet.name };
+    if (mine) yield { lineIdx, rowNumber: mine, side: 'mine', sheetName: sheet.name };
+  }
 }
 
 export function getWorkbookSheetMaxRowNumber(
@@ -156,8 +165,10 @@ export function resolveWorkbookGotoTarget({
   baseVersionLabel,
   mineVersionLabel,
   allowedLineIndexes,
+  artifact,
 }: ResolveWorkbookGotoTargetParams): ResolvedWorkbookGotoTarget | null {
-  const candidates = collectWorkbookGotoRowCandidates(diffLines, lineSheetContexts, sheetName, allowedLineIndexes);
+  const candidates = artifact ? artifactGotoCandidates(artifact, sheetName, allowedLineIndexes)
+    : collectWorkbookGotoRowCandidates(diffLines, lineSheetContexts, sheetName, allowedLineIndexes);
   const candidate = resolveWorkbookGotoCandidate(candidates, lineNo, preferredSide);
   if (!candidate) return null;
 

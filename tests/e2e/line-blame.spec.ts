@@ -73,4 +73,39 @@ for (const layout of ['unified', 'split-h', 'split-v'] as const) {
     await uncommittedLine.hover();
     await expect(page.getByRole('tooltip')).toContainText(/Uncommitted|未提交/);
   });
+
+  test(`${layout} prepared text analysis picks up background line attribution`, async ({ page }) => {
+    await page.goto('/?__e2e=1');
+    await page.waitForFunction(() => Boolean(window.__SVN_DIFF_E2E__));
+    await page.evaluate(async (targetLayout) => {
+      const attribution = {
+        base: [{ lineNo: 1, revision: 'r41', author: 'background-alice', date: '2026-10-13', uncommitted: false }],
+        mine: [{ lineNo: 1, revision: 'r42', author: 'background-bob', date: '2026-10-13', uncommitted: false }],
+      };
+      let resolveAttribution: ((payload: typeof attribution) => void) | undefined;
+      window.versora = {
+        loadLineBlame: () => new Promise((resolve) => { resolveAttribution = resolve; }),
+      } as NonNullable<typeof window.versora>;
+      window.addEventListener('versora-test-deliver-attribution', () => resolveAttribution?.(attribution), { once: true });
+      const sharedLines = Array.from({ length: 8100 }, (_, index) => `stable line ${index + 2}`);
+      await window.__SVN_DIFF_E2E__!.loadTextDiff({
+        fileName: 'large-background-blame.txt',
+        layout: targetLayout,
+        collapseCtx: true,
+        baseContent: ['const answer = 41;', ...sharedLines].join('\n'),
+        mineContent: ['const answer = 42;', ...sharedLines].join('\n'),
+      });
+    }, layout);
+
+    await expect(page.locator('button[aria-label*="background-alice"]')).toHaveCount(0);
+    await page.evaluate(() => window.dispatchEvent(new Event('versora-test-deliver-attribution')));
+    const baseLine = page.locator('button[aria-label*="background-alice"]');
+    const mineLine = page.locator('button[aria-label*="background-bob"]');
+    await expect(baseLine).toHaveCount(1);
+    await expect(mineLine).toHaveCount(1);
+    await expect(baseLine.getByText('r41', { exact: true })).toBeVisible();
+    await expect(mineLine.getByText('r42', { exact: true })).toBeVisible();
+    await baseLine.hover();
+    await expect(page.getByRole('tooltip')).toContainText('background-alice');
+  });
 }

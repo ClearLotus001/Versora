@@ -1,6 +1,6 @@
 {
   "name": "versora",
-  "version": "1.0.42",
+  "version": "1.0.43",
   "description": "Versora — a focused comparison workspace for files, workbooks, Git, and SVN",
   "author": "ClearLotus",
   "license": "MIT",
@@ -159,5 +159,9 @@
     "electron-updater": "^6.8.3",
     "fast-xml-parser": "^5.5.10",
     "framer-motion": "^12.42.2"
+  },
+  "allowScripts": {
+    "electron": true,
+    "esbuild": true
   }
 }

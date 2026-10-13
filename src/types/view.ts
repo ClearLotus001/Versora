@@ -39,6 +39,7 @@ export interface SplitRow {
   lineIdx: number;
   lineIdxs: number[];
   workbookRowDelta?: WorkbookRowDelta;
+  workbookArtifactRow?: import('@/utils/workbook/workbookArtifactProvider').WorkbookArtifactRowReference;
 }
 
 export interface SplitLineItem {

@@ -310,15 +310,17 @@ export function alignTextChangeBlock(
   deleteTexts: readonly string[],
   addTexts: readonly string[],
 ): TextChangeAlignmentPair[] {
-  const deleteFeatures = deleteTexts.map(buildTextFeatures);
-  const addFeatures = addTexts.map(buildTextFeatures);
-
   if (
-    deleteFeatures.some((feature) => feature.structured)
-    || addFeatures.some((feature) => feature.structured)
+    deleteTexts.length === 0
+    || addTexts.length === 0
+    || deleteTexts.some(isStructuredTextLine)
+    || addTexts.some(isStructuredTextLine)
   ) {
     return buildPositionalPairs(deleteTexts.length, addTexts.length);
   }
+
+  const deleteFeatures = deleteTexts.map(buildTextFeatures);
+  const addFeatures = addTexts.map(buildTextFeatures);
 
   const scoreCache = new Map<string, number>();
   const getScore = (deleteIndex: number, addIndex: number): number => {

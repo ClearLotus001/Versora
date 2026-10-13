@@ -76,6 +76,10 @@ export interface WorkbookCanvasLayerViewports {
 }
 
 const workbookMergeRangeRowIndexCache = new WeakMap<ReadonlyArray<WorkbookMergeRange>, Map<number, WorkbookMergeRange[]>>();
+const workbookMergedCompareCache = new WeakMap<
+  Map<number, Map<number, WorkbookCompareCellState>>,
+  { rowNumbers: number[]; cellsByRange: Map<string, WorkbookCompareCellState | undefined> }
+>();
 
 export function clipWorkbookCanvasToViewport(
   ctx: CanvasRenderingContext2D,
@@ -450,9 +454,31 @@ export function getWorkbookMergedCompareCellFromRows(
   compareCellsByRowNumber: Map<number, Map<number, WorkbookCompareCellState>>,
   range: WorkbookMergeRange,
 ): WorkbookCompareCellState | undefined {
-  let fallback: WorkbookCompareCellState | undefined;
+  // Render-model maps are immutable. Share the result across virtual fragments
+  // of a tall merge, and visit present rows only (worksheet row numbers may be
+  // sparse or span the full Excel row limit).
+  let cached = workbookMergedCompareCache.get(compareCellsByRowNumber);
+  if (!cached || cached.rowNumbers.length !== compareCellsByRowNumber.size) {
+    cached = {
+      rowNumbers: [...compareCellsByRowNumber.keys()].sort((left, right) => left - right),
+      cellsByRange: new Map(),
+    };
+    workbookMergedCompareCache.set(compareCellsByRowNumber, cached);
+  }
+  const cacheKey = `${range.startRow}:${range.endRow}:${range.startCol}:${range.endCol}`;
+  if (cached.cellsByRange.has(cacheKey)) return cached.cellsByRange.get(cacheKey);
 
-  for (let rowNumber = range.startRow; rowNumber <= range.endRow; rowNumber += 1) {
+  let low = 0;
+  let high = cached.rowNumbers.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (cached.rowNumbers[middle]! < range.startRow) low = middle + 1;
+    else high = middle;
+  }
+  let fallback: WorkbookCompareCellState | undefined;
+  for (let index = low; index < cached.rowNumbers.length; index += 1) {
+    const rowNumber = cached.rowNumbers[index]!;
+    if (rowNumber > range.endRow) break;
     const compareCells = compareCellsByRowNumber.get(rowNumber);
     if (!compareCells) continue;
 
@@ -460,9 +486,12 @@ export function getWorkbookMergedCompareCellFromRows(
     if (!cell) continue;
 
     fallback ??= cell;
-    if (cell.changed) return cell;
+    if (cell.changed) {
+      cached.cellsByRange.set(cacheKey, cell);
+      return cell;
+    }
   }
-
+  cached.cellsByRange.set(cacheKey, fallback);
   return fallback;
 }
 

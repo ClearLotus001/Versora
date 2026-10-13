@@ -1,4 +1,4 @@
-import { useCallback, useRef, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 
 import type {
   DiffData,
@@ -14,6 +14,8 @@ import { useAppStore } from '@/store/appStore';
 import { shouldSkipSameRevisionCompare } from '@/utils/navigation/revisionCompareSelection';
 
 interface UseRevisionCompareArgs {
+  currentDiffDataRef: MutableRefObject<DiffData | null>;
+  activeComparisonId: string | null;
   revisionOptionsRef: MutableRefObject<SvnRevisionInfo[]>;
   revisionQuerySeqRef: MutableRefObject<number>;
   loadSeqRef: MutableRefObject<number>;
@@ -28,6 +30,8 @@ interface UseRevisionCompareArgs {
 }
 
 export default function useRevisionCompare({
+  currentDiffDataRef,
+  activeComparisonId,
   revisionOptionsRef,
   revisionQuerySeqRef,
   loadSeqRef,
@@ -47,6 +51,9 @@ export default function useRevisionCompare({
 
   const { state: revisionState, actions: revisionActions } = revisionQuery;
   const revisionOptionsScopeRef = useRef<'shared' | LocalFilePickSide | null>(null);
+  useEffect(() => {
+    revisionOptionsScopeRef.current = null;
+  }, [activeComparisonId]);
 
   const applyRevisionOptionsPayload = useCallback((
     payload: RevisionOptionsPayload,
@@ -115,7 +122,7 @@ export default function useRevisionCompare({
       const payload = await window.versora.queryRevisionOptions({
         ...query,
         ...(targetSide ? { targetSide } : {}),
-      });
+      }, currentDiffDataRef.current?.comparisonSessionId);
       if (seq !== revisionQuerySeqRef.current) return;
       applyRevisionOptionsPayload(payload, append ? 'append' : 'replace', targetSide);
       debugLog('revision-options:loaded', {
@@ -145,6 +152,7 @@ export default function useRevisionCompare({
   }, [
     applyRevisionOptionsPayload,
     compareContext,
+    currentDiffDataRef,
     revisionQuerySeqRef,
     revisionActions,
   ]);
@@ -244,21 +252,27 @@ export default function useRevisionCompare({
       });
       return;
     }
-    const bridge = window.versora;
-    if (!bridge) return;
+    const rawBridge = window.versora;
+    if (!rawBridge) return;
+    const bridge = rawBridge;
+    const comparisonSessionId = currentDiffDataRef.current?.comparisonSessionId;
+    const compareMode = workbookCompareModeRef.current;
     revisionActions.setSwitching(true);
     const seq = await beginDiffLoad();
+    if (seq !== loadSeqRef.current) return;
     try {
       const nextData = compareContext === 'literal_two_file_compare'
         ? await bridge.loadTwoFileRevisionDiff(
             nextBaseRevisionId,
             nextMineRevisionId,
-            workbookCompareModeRef.current,
+            compareMode,
+            comparisonSessionId,
           )
         : await bridge.loadRevisionDiff(
             nextBaseRevisionId,
             nextMineRevisionId,
-            workbookCompareModeRef.current,
+            compareMode,
+            comparisonSessionId,
           );
       if (seq !== loadSeqRef.current) return;
       await applyDiffData(nextData, {
@@ -268,12 +282,13 @@ export default function useRevisionCompare({
     } catch (error) {
       failDiffLoad(seq, error);
     } finally {
-      revisionActions.setSwitching(false);
+      if (seq === loadSeqRef.current) revisionActions.setSwitching(false);
     }
   }, [
     applyDiffData,
     beginDiffLoad,
     compareContext,
+    currentDiffDataRef,
     failDiffLoad,
     loadSeqRef,
     revisionActions,
@@ -281,23 +296,29 @@ export default function useRevisionCompare({
   ]);
 
   const handleResetRevisionCompare = useCallback(async () => {
-    const bridge = window.versora;
-    if (!bridge || !resetPair) return;
+    const rawBridge = window.versora;
+    if (!rawBridge || !resetPair) return;
+    const bridge = rawBridge;
     if (!resetPair.baseRevisionId && !resetPair.mineRevisionId) return;
 
+    const comparisonSessionId = currentDiffDataRef.current?.comparisonSessionId;
+    const compareMode = workbookCompareModeRef.current;
     revisionActions.setSwitching(true);
     const seq = await beginDiffLoad();
+    if (seq !== loadSeqRef.current) return;
     try {
       const nextData = compareContext === 'literal_two_file_compare'
         ? await bridge.loadTwoFileRevisionDiff(
             resetPair.baseRevisionId ?? '',
             resetPair.mineRevisionId ?? '',
-            workbookCompareModeRef.current,
+            compareMode,
+            comparisonSessionId,
           )
         : await bridge.loadRevisionDiff(
             resetPair.baseRevisionId ?? '',
             resetPair.mineRevisionId ?? '',
-            workbookCompareModeRef.current,
+            compareMode,
+            comparisonSessionId,
           );
       if (seq !== loadSeqRef.current) return;
       await applyDiffData(nextData, {
@@ -307,12 +328,13 @@ export default function useRevisionCompare({
     } catch (error) {
       failDiffLoad(seq, error);
     } finally {
-      revisionActions.setSwitching(false);
+      if (seq === loadSeqRef.current) revisionActions.setSwitching(false);
     }
   }, [
     applyDiffData,
     beginDiffLoad,
     compareContext,
+    currentDiffDataRef,
     failDiffLoad,
     loadSeqRef,
     resetPair,

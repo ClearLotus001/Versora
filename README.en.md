@@ -31,6 +31,8 @@ After installing and launching Versora, choose a workflow from the home screen:
 
 In the diff view, switch layouts, search content, and navigate change hunks. When a file comes from Git or SVN, the header revision picker also lets you browse its history.
 
+Each comparison opens in its own file tab. Switch or close comparisons in the tab bar; returning to a file restores its revisions, search, layout, scroll position, and worksheet state without reloading. **New comparison** and **Home** let you open more files while keeping existing tabs.
+
 ## Features
 
 ### Text comparison
@@ -86,6 +88,8 @@ If either side belongs to a Git repository or SVN working copy, Versora keeps hi
 
 Select **Connect to TortoiseSVN** on the installed Windows app's home screen, then choose all-file, text-only, or workbook-only integration. Matching comparisons launched from TortoiseSVN will then open directly in Versora.
 
+Opening diffs for different files from **Show log** adds tabs in the same window and preserves existing comparisons. Tabs remain available until you close them or exit the app.
+
 ## Support and scope
 
 | Area | Current support |
@@ -106,9 +110,9 @@ Versora currently focuses on **reviewing changes**. Directory-tree comparison, t
 - Windows
 - Node.js 24+
 - npm
-- Rust stable for native workbook acceleration, full verification, and Windows installer builds
+- Rust stable for workbook parsing and comparison, full verification, and Windows installer builds
 
-Without Rust, `npm run dev:app` can still start with the JavaScript fallback, but large workbooks will load more slowly.
+Desktop workbook comparison uses Rust with indexed disk storage and on-demand reads. `npm run dev:app` requires the native parser before startup; it builds missing artifacts and stops with an error if the build fails.
 
 ### Start the development app
 
@@ -119,7 +123,9 @@ npm ci
 npm run dev:app
 ```
 
-`dev:app` starts Vite, Electron, and watch compilation for the Electron main process. If Rust is installed and the native artifacts are missing, it also builds the workbook parser first.
+`dev:app` checks or builds the workbook parser before starting Vite, Electron, and watch compilation for the Electron main process.
+
+npm 12 requires approval before running dependency install scripts. This project approves Electron and esbuild in `package.json`. If dependencies were installed before those approvals and startup reports `Electron failed to install correctly`, run `npm rebuild electron esbuild`, then restart `npm run dev:app`.
 
 ### Common commands
 

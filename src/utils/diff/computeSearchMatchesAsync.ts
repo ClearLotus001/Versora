@@ -1,8 +1,4 @@
-import {
-  buildSearchPattern,
-  scanMatchesInSearchableLines,
-  type SearchScanResult,
-} from '@/engine/text/search';
+import type { SearchScanResult } from '@/engine/text/search';
 import { createLatestWorkerClient } from '@/utils/async/latestWorkerClient';
 
 interface SearchOptions {
@@ -45,23 +41,6 @@ interface TextSearchRequestInput {
   options: SearchOptions;
 }
 
-function computeSearchMatchesSync({
-  searchableLines,
-  lineStartOffsets,
-  options,
-}: TextSearchRequestInput): SearchScanResult {
-  const pattern = buildSearchPattern(options.query, {
-    isRegex: options.isRegex,
-    isCaseSensitive: options.isCaseSensitive,
-  });
-  return scanMatchesInSearchableLines(
-    searchableLines,
-    pattern,
-    undefined,
-    lineStartOffsets,
-  );
-}
-
 let workerSearchableLines: string[] | null = null;
 let workerLineStartOffsets: number[] | null = null;
 
@@ -101,7 +80,6 @@ const textSearchWorkerClient = createLatestWorkerClient<
       ? { ok: true, result: response.result }
       : { ok: false, error: response.error }
   ),
-  computeWithoutWorker: computeSearchMatchesSync,
   supersededMessage: 'Superseded search request.',
   staleMessage: 'Discarded stale search result.',
   workerErrorMessage: 'Failed to compute search matches in worker.',

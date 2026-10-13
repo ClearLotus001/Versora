@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-electron/
 release/
+/output/
 .build-tmp/
 .tmp-*/
 logs/
@@ -12,6 +13,9 @@ release-debug*/
 release-inner*/
 
 rust/target/
+rust/vendor/**/target/
+rust/vendor/**/Cargo.lock
+__pycache__/
 
 *.log
 *.tmp

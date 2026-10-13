@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { HorizontalVirtualColumnEntry } from '../src/hooks/virtualization/useHorizontalVirtualColumns';
+import type { SplitRow, WorkbookCellDelta } from '../src/types';
+import { resolveWorkbookCanvasAnchor } from '../src/utils/workbook/workbookCanvasCompareCells';
+import { buildWorkbookSelectedCell, type WorkbookRowEntry } from '../src/utils/workbook/workbookNavigation';
+import { buildWorkbookCompareCellsMaps } from '../src/utils/workbook/workbookPanelHelpers';
 import {
   findWorkbookCanvasRowSegmentAtY,
   getWorkbookCanvasHoverRowSegmentBounds,
@@ -396,6 +400,81 @@ test('getWorkbookMergedCompareCellFromRows resolves merged cell tone from any ro
   assert.equal(compareCell?.changed, true);
   assert.equal(compareCell?.kind, 'add');
   assert.equal(compareCell?.mineCell.value, 'sdfsf');
+});
+
+test('tall merge comparison visits sparse present rows once and shares the summary between fragments', () => {
+  const changed: WorkbookCellDelta = {
+    column: 1, baseCell: { value: 'old', formula: '' }, mineCell: { value: 'new', formula: '' },
+    changed: true, masked: false, strictOnly: false, kind: 'modify',
+    hasBaseContent: true, hasMineContent: true, hasContent: true,
+  };
+  let rowReads = 0;
+  class CountingRows extends Map<number, Map<number, WorkbookCellDelta>> {
+    override get(rowNumber: number) { rowReads += 1; return super.get(rowNumber); }
+  }
+  const rows = new CountingRows([
+    [1, new Map()],
+    [1_048_576, new Map([[1, changed]])],
+  ]);
+  const range = { startRow: 1, endRow: 1_048_576, startCol: 1, endCol: 1 };
+
+  assert.equal(getWorkbookMergedCompareCellFromRows(rows, range), changed);
+  assert.equal(rowReads, 2);
+  assert.equal(getWorkbookMergedCompareCellFromRows(rows, { ...range }), changed);
+  assert.equal(rowReads, 2);
+});
+
+test('a virtual fragment inside a tall merge keeps its original anchor and clips to local row bands', () => {
+  const range = { startRow: 1, endRow: 10_000, startCol: 1, endCol: 1 };
+  const renderedRowNumbers = [65, 66, 67];
+  const info = getWorkbookMergeDrawInfo({
+    rowNumber: 65, column: 1, rowTop: 0, rowHeight: 24,
+    renderedRowNumbers,
+    rowLayoutByRowNumber: new Map([[65, { top: 0, height: 24 }], [66, { top: 48, height: 24 }], [67, { top: 96, height: 24 }]]),
+    mergedRanges: [range], columnLayoutByColumn: buildSingleColumnLayout(),
+    contentLeft: 12, currentScrollLeft: 0, freezeColumnCount: 0, frozenWidth: 0, mode: 'single',
+  });
+  assert.equal(info.region?.range.startRow, 1);
+  assert.equal(info.region?.visibleStartRow, 65);
+  assert.equal(info.region?.height, 120);
+  assert.deepEqual(info.region?.rowSegments, [{ top: 0, height: 24 }, { top: 48, height: 24 }, { top: 96, height: 24 }]);
+});
+
+test('stacked fragment drawing and selection resolve an anchor outside its visible and frozen row window', () => {
+  const mergeRange = { startRow: 1, endRow: 10_000, startCol: 1, endCol: 1 };
+  for (const side of ['base', 'mine'] as const) {
+    const anchorEntry: WorkbookRowEntry = {
+      sheetName: 'Items', side, versionLabel: side, rowNumber: 1, visibleColumns: [0, 1], lineIdxs: [0],
+      cells: [{ value: 'ID', formula: '' }, { value: `${side}-anchor`, formula: '=A1' }],
+    };
+    const visibleEntry: WorkbookRowEntry = { ...anchorEntry, rowNumber: 65, lineIdxs: [64], cells: [{ value: '65', formula: '' }, { value: '', formula: '' }] };
+    const anchor = resolveWorkbookCanvasAnchor({
+      entry: visibleEntry, rowEntryByRowNumber: new Map([[1, anchorEntry], [65, visibleEntry]]), column: 1, mergeRange,
+    });
+    assert.equal(anchor.entry, anchorEntry);
+    assert.equal(anchor.rowNumber, 1);
+    const selection = buildWorkbookSelectedCell(anchor.entry, anchor.column, [mergeRange]);
+    assert.equal(selection.address, 'B1');
+    assert.equal(selection.value, `${side}-anchor`);
+    assert.equal(selection.formula, '=A1');
+    assert.equal(selection.side, side);
+  }
+});
+
+test('merged comparison summaries stay isolated between strict and content render maps', () => {
+  const row: SplitRow = {
+    left: { type: 'delete', base: '@@row\t1\t ', mine: null, baseLineNo: 1, mineLineNo: null, baseCharSpans: null, mineCharSpans: null },
+    right: { type: 'add', base: null, mine: '@@row\t1\t', baseLineNo: null, mineLineNo: 1, baseCharSpans: null, mineCharSpans: null },
+    lineIdx: 0, lineIdxs: [0, 1],
+  };
+  const rows = [row];
+  const strict = buildWorkbookCompareCellsMaps(rows, [0], 'strict');
+  const content = buildWorkbookCompareCellsMaps(rows, [0], 'content');
+  const range = { startRow: 1, endRow: 10_000, startCol: 0, endCol: 0 };
+
+  assert.equal(getWorkbookMergedCompareCellFromRows(strict.base, range)?.changed, true);
+  assert.equal(getWorkbookMergedCompareCellFromRows(content.base, range), undefined);
+  assert.equal(getWorkbookMergedCompareCellFromRows(strict.base, range)?.changed, true);
 });
 
 test('getWorkbookCanvasRowSegments keeps stacked merged rows on their own visible bands', () => {

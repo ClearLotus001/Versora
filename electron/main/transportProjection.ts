@@ -1,4 +1,5 @@
 import { compactTextDiffLines } from './compactTextDiffLines.js';
+import { compactTextSplitRowDescriptors } from '../../shared/textSplitRowTransport.js';
 import type { CompactTextDiffLines, DiffData, DiffLine } from './types.js';
 
 const MAX_SYNTAX_HIGHLIGHT_TOTAL_CHARS = 300_000;
@@ -72,6 +73,10 @@ export function projectTransportDiffData(data: DiffData): DiffData {
             : cached;
           if (cached === undefined) compactCache.set(diffLines, compactDiffLines);
         }
+        const compactSplitRowDescriptors = compactTextSplitRowDescriptors(
+          snapshot.textAnalysis.splitRowDescriptors,
+          diffLines.length,
+        );
         return [mode, {
           ...snapshot,
           textAnalysis: {
@@ -79,6 +84,7 @@ export function projectTransportDiffData(data: DiffData): DiffData {
             diffLines: compactDiffLines ? [] : diffLines,
             ...(compactDiffLines ? { compactDiffLines } : {}),
             splitRowDescriptors: [],
+            ...(compactSplitRowDescriptors ? { compactSplitRowDescriptors } : {}),
           },
         }];
       })) as DiffData['analysisSnapshotsByMode']

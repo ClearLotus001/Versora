@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 import { BoundedCommandGate } from '../electron/main/commandGate';
 import {
@@ -80,3 +81,48 @@ test('BoundedCommandGate releases capacity after command failure', async () => {
     maxQueue: 1,
   });
 });
+
+test('queued cancellation immediately frees capacity and never starts the cancelled task', async () => {
+  const gate = new BoundedCommandGate(1, 1, 'queue full');
+  const first = deferred<number>();
+  const blocking = gate.run(() => first.promise);
+  const controller = new AbortController();
+  let started = false;
+  const cancelled = gate.run(async () => { started = true; return 2; }, controller.signal);
+  const rejected = assert.rejects(cancelled, { name: 'AbortError' });
+  controller.abort();
+  await rejected;
+  assert.equal(gate.getSnapshot().queued, 0);
+  const replacement = gate.run(async () => 3);
+  first.resolve(1);
+  assert.equal(await blocking, 1);
+  assert.equal(await replacement, 3);
+  assert.equal(started, false);
+});
+
+for (const firstFails of [false, true]) {
+  test(`queued commands retain each caller's async context after ${firstFails ? 'failure' : 'success'}`, async () => {
+    const contexts = new AsyncLocalStorage<string>();
+    const gate = new BoundedCommandGate(1, 2, 'queue full');
+    const blocker = deferred<void>();
+    const seen: string[] = [];
+    const first = contexts.run('first', () => gate.run(async () => {
+      await blocker.promise;
+      seen.push(contexts.getStore()!);
+      if (firstFails) throw new Error('first failed');
+      return 1;
+    }));
+    const checkedFirst = firstFails ? assert.rejects(first, /first failed/) : first;
+    const next = ['second', 'third'].map(name => contexts.run(name, () => gate.run(async () => {
+      const beforeAwait = contexts.getStore();
+      await Promise.resolve();
+      assert.equal(contexts.getStore(), beforeAwait);
+      seen.push(contexts.getStore()!);
+      return name;
+    })));
+    blocker.resolve();
+    await checkedFirst;
+    assert.deepEqual(await Promise.all(next), ['second', 'third']);
+    assert.deepEqual(seen, ['first', 'second', 'third']);
+  });
+}

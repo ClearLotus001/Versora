@@ -34,6 +34,23 @@ export function summarizeWorkbookCellChanges(
     modified: 0,
     strictOnly: 0,
   };
+  const artifact = rows[0]?.workbookArtifactRow;
+  if (artifact) {
+    const { descriptor } = artifact.provider;
+    const sheet = descriptor.sheets.find((item) => item.id === artifact.sheetId)!;
+    const start = descriptor.rows.runOffsets[sheet.pairStart]!;
+    const end = descriptor.rows.runOffsets[sheet.pairStart + sheet.pairCount]!;
+    for (let run = start; run < end; run += 1) {
+      const count = descriptor.runs.ends[run]! - descriptor.runs.starts[run]!;
+      const flags = descriptor.runs.flags[run]!;
+      const kind = flags & 3;
+      if (kind === 1) summary.added += count;
+      else if (kind === 2) summary.removed += count;
+      else if (flags & 4) summary.strictOnly += count;
+      else summary.modified += count;
+    }
+    return summary;
+  }
 
   rows.forEach((row) => {
     const rowDelta = buildWorkbookSplitRowCompareState(row, undefined, compareMode);

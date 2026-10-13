@@ -78,7 +78,7 @@ test('workbook row visuals resolve region and minimap tones consistently', () =>
   const mixedMiniMapPaint = resolveWorkbookMiniMapPaint(lightTheme, 'mixed');
   assert.notEqual(mixedMiniMapColor, lightTheme.bg2);
   assert.match(mixedMiniMapColor, /^(#|rgba?\()/i);
-  assert.equal(strictOnlyMiniMapColor, lightTheme.searchHl);
+  assert.equal(strictOnlyMiniMapColor, lightTheme.whitespaceBrd);
   assert.equal(mixedMiniMapPaint.kind, 'solid');
   assert.equal(mixedMiniMapPaint.color, lightTheme.chgBrd);
 });
@@ -220,9 +220,9 @@ test('workbook accent surface visuals expose shared badge and button tokens', ()
   });
 });
 
-test('workbook version identity adds subtle side tint only to neutral body cells', () => {
+test('workbook version identity keeps body cells neutral and tints only headers', () => {
   assert.deepEqual(resolveWorkbookVersionIdentityVisual(lightTheme, 'base', false), {
-    overlay: `${lightTheme.versionBase}12`,
+    overlay: null,
     rail: null,
     railWidth: 0,
   });
@@ -237,7 +237,7 @@ test('workbook version identity adds subtle side tint only to neutral body cells
     railWidth: 0,
   });
   assert.deepEqual(resolveWorkbookVersionIdentityVisual(darkTheme, 'mine', false), {
-    overlay: `${darkTheme.versionMine}0d`,
+    overlay: null,
     rail: null,
     railWidth: 0,
   });

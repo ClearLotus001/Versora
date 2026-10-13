@@ -241,11 +241,11 @@ const Toolbar = memo((props: ToolbarProps) => {
   }, [isElectron, onCheckForUpdates, onDownloadUpdate, onInstallUpdate, t, updateState]);
 
   const Btn = ({
-    active = false, pressed, onClick, children, tooltip = '', compact = false, disabled = false, testId,
+    active = false, pressed, onClick, children, tooltip = '', compact = false, disabled = false, testId, standalone = false,
   }: {
     active?: boolean; pressed?: boolean; onClick: () => void; children: React.ReactNode;
     tooltip?: string; compact?: boolean; disabled?: boolean;
-    testId?: string;
+    testId?: string; standalone?: boolean;
   }) => {
     const button = (
       <button
@@ -257,22 +257,25 @@ const Toolbar = memo((props: ToolbarProps) => {
         aria-label={tooltip || undefined}
         className={`
           app-toolbar__button
+          ${standalone ? 'app-toolbar__control-surface' : ''}
           inline-flex items-center justify-center gap-1.5
-          h-8 rounded-lg text-[13px] font-ui font-semibold
+          h-8 text-[13px] font-ui
+          ${standalone ? 'rounded-[10px] font-bold' : 'rounded-lg font-semibold'}
           whitespace-nowrap leading-none
           transition-all duration-150
           ${compact
-            ? (responsiveMode === 'tight' ? 'px-1.5 min-w-7' : 'px-2 min-w-7')
+            ? (standalone ? 'px-2 min-w-8' : (responsiveMode === 'tight' ? 'px-1.5 min-w-7' : 'px-2 min-w-7'))
             : (responsiveMode === 'tight' ? 'px-2' : 'px-2.5')
           }
           ${active
             ? 'bg-[var(--accent)]/[0.13] border border-[var(--accent)]/40 text-accent'
-            : 'bg-transparent border border-transparent text-text-title'
+            : (standalone ? 'bg-bg-surface-hover border border-border-default text-text-title' : 'bg-transparent border border-transparent text-text-title')
           }
           ${disabled
             ? 'opacity-45 cursor-not-allowed'
             : 'cursor-pointer hover:bg-bg-elevated hover:border-border-strong hover:shadow-sm'
           }
+          ${standalone && !disabled ? 'hover:-translate-y-px' : ''}
         `}
         style={{
           ...(active ? { boxShadow: 'inset 0 -2px 0 var(--acc2)' } : {}),
@@ -284,15 +287,15 @@ const Toolbar = memo((props: ToolbarProps) => {
     return tooltip ? <Tooltip content={tooltip} anchorStyle={noDragAnchorStyle}>{button}</Tooltip> : button;
   };
 
-  const Group = ({ children, ariaLabel }: { children: React.ReactNode; ariaLabel?: string }) => (
+  const Group = ({ children, ariaLabel, plain = false }: { children: React.ReactNode; ariaLabel?: string; plain?: boolean }) => (
     <div
       role="group"
       aria-label={ariaLabel}
       className={`
-        app-toolbar__group
-        flex items-center rounded-xl shrink-0
-        bg-bg-surface-hover border border-border-default
-        ${responsiveMode === 'tight' ? 'gap-0.5 p-px' : 'gap-0.5 p-0.5'}
+        flex items-center shrink-0
+        ${plain
+          ? 'gap-1.5'
+          : `app-toolbar__group rounded-xl bg-bg-surface-hover border border-border-default ${responsiveMode === 'tight' ? 'gap-0.5 p-px' : 'gap-0.5 p-0.5'}`}
       `}
       style={noDragStyle}>
       {children}
@@ -308,7 +311,7 @@ const Toolbar = memo((props: ToolbarProps) => {
           aria-expanded={themeMenuOpen}
           onClick={() => setThemeMenuOpen((open) => !open)}
           className="
-            app-toolbar__theme-button
+            app-toolbar__theme-button app-toolbar__control-surface
             h-8 rounded-[10px] border border-border-default
             bg-bg-surface-hover text-text-title
             font-ui text-[13px] font-bold
@@ -522,25 +525,23 @@ const Toolbar = memo((props: ToolbarProps) => {
       {/* ── Right Section ── */}
       <div className="flex items-center justify-end content-center flex-nowrap gap-1.5 flex-none ml-2" style={noDragStyle}>
         {updateAction && (
-          <Group>
-            <Btn active={updateAction.active} onClick={updateAction.onClick} tooltip={updateState?.errorMessage || updateAction.label} disabled={updateAction.disabled}>
-              <Icon name={updateAction.icon} />
-              {showUpdateLabel && <span>{updateAction.label}</span>}
-            </Btn>
-          </Group>
+          <Btn standalone active={updateAction.active} onClick={updateAction.onClick} tooltip={updateState?.errorMessage || updateAction.label} disabled={updateAction.disabled}>
+            <Icon name={updateAction.icon} />
+            {showUpdateLabel && <span>{updateAction.label}</span>}
+          </Btn>
         )}
 
-        <Group ariaLabel={t('toolbarLanguageTitle')}>
-          <Btn onClick={() => setLocale(nextLocale)} tooltip={t('toolbarLanguageTitle')}>
+        <Group plain ariaLabel={t('toolbarLanguageTitle')}>
+          <Btn standalone onClick={() => setLocale(nextLocale)} tooltip={t('toolbarLanguageTitle')}>
             <Icon name="language" />
             {showLanguageText && (
               <span>{getLocaleLabel(nextLocale)}</span>
             )}
           </Btn>
-          <Btn onClick={onAbout} tooltip={t('toolbarAboutTitle')} compact>
+          <Btn standalone onClick={onAbout} tooltip={t('toolbarAboutTitle')} compact>
             <Icon name="info" />
           </Btn>
-          <Btn onClick={onHelp} tooltip={t('toolbarShortcutsTitle')} compact>
+          <Btn standalone onClick={onHelp} tooltip={t('toolbarShortcutsTitle')} compact>
             <Icon name="help" />
           </Btn>
         </Group>
@@ -548,14 +549,14 @@ const Toolbar = memo((props: ToolbarProps) => {
         <ThemeMenu />
 
         {isElectron && !usesNativeWindowControls && (
-          <Group>
-            <Btn onClick={() => window.versora!.windowMinimize()} tooltip={t('toolbarWindowMinimizeTitle')} compact>
+          <Group plain>
+            <Btn standalone onClick={() => window.versora!.windowMinimize()} tooltip={t('toolbarWindowMinimizeTitle')} compact>
               <Icon name="windowMinimize" />
             </Btn>
-            <Btn onClick={() => window.versora!.windowMaximize()} tooltip={windowMaximizeTooltip} compact>
+            <Btn standalone onClick={() => window.versora!.windowMaximize()} tooltip={windowMaximizeTooltip} compact>
               <Icon name={isWindowMaximized ? 'windowRestore' : 'windowMaximize'} />
             </Btn>
-            <Btn onClick={() => window.versora!.windowClose()} tooltip={t('toolbarWindowCloseTitle')} compact>
+            <Btn standalone onClick={() => window.versora!.windowClose()} tooltip={t('toolbarWindowCloseTitle')} compact>
               <Icon name="windowClose" />
             </Btn>
           </Group>

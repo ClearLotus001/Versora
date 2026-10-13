@@ -18,10 +18,8 @@ import {
 import { createWorkbookRowLine, createWorkbookSheetLine } from '../src/utils/workbook/workbookDisplay';
 import {
   buildWorkbookSectionRowIndex,
-  buildWorkbookSectionRowIndexFromPrecomputedDelta,
 } from '../src/utils/workbook/workbookSheetIndex';
 import { getWorkbookSections } from '../src/utils/workbook/workbookSections';
-import type { WorkbookPrecomputedDeltaPayload } from '../src/types/workbook';
 
 function buildWorkbook(rows: Array<Array<string>>, sheetName = 'Thing') {
   return [
@@ -481,7 +479,7 @@ test('findWorkbookDiffRegionNavigationIndex falls through to later sheets when t
   }), 0);
 });
 
-test('buildWorkbookDiffRegions honors precomputed merge-aware deltas in content mode', () => {
+test('buildWorkbookDiffRegions honors authoritative merge-aware deltas in content mode', () => {
   const diffLines = [
     {
       type: 'equal' as const,
@@ -502,44 +500,16 @@ test('buildWorkbookDiffRegions honors precomputed merge-aware deltas in content 
       mineCharSpans: null,
     },
   ];
-  const payload: WorkbookPrecomputedDeltaPayload = {
-    compareMode: 'content',
-    sections: [
-      {
-        name: 'Thing',
-        rows: [
-          {
-            lineIdx: 1,
-            lineIdxs: [1],
-            leftLineIdx: 1,
-            rightLineIdx: 1,
-            cellDeltas: [
-              {
-                column: 0,
-                baseCell: { value: 'Group', formula: '' },
-                mineCell: { value: 'Group', formula: '' },
-                changed: true,
-                masked: false,
-                strictOnly: false,
-                kind: 'modify',
-                hasBaseContent: true,
-                hasMineContent: true,
-                hasContent: true,
-              },
-            ],
-            changedColumns: [0],
-            strictOnlyColumns: [],
-            changedCount: 1,
-            hasChanges: true,
-            tone: 'mixed',
-          },
-        ],
-      },
-    ],
-  };
-
   const sections = getWorkbookSections(diffLines);
-  const rowIndex = buildWorkbookSectionRowIndexFromPrecomputedDelta(diffLines, payload);
+  const rowIndex = buildWorkbookSectionRowIndex(diffLines, sections, 'content');
+  rowIndex.get('Thing')!.rows[0]!.workbookRowDelta = {
+    cellDeltas: new Map([[0, {
+      column: 0, baseCell: { value: 'Group', formula: '' }, mineCell: { value: 'Group', formula: '' },
+      changed: true, masked: false, strictOnly: false, kind: 'modify',
+      hasBaseContent: true, hasMineContent: true, hasContent: true,
+    }]]),
+    changedColumns: [0], strictOnlyColumns: [], changedCount: 1, hasChanges: true, tone: 'mixed',
+  };
   const regions = buildWorkbookDiffRegions(
     sections,
     rowIndex,

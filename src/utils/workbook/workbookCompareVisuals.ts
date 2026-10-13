@@ -108,7 +108,7 @@ export function getWorkbookMergeContinuationVisual(
   borderColor: string,
 ): WorkbookMergeContinuationVisual {
   return {
-    background: `${theme.bg0}1c`,
+    background: `${theme.workbookCanvasBg}1c`,
     guideStroke: `${borderColor}66`,
   };
 }
@@ -127,14 +127,13 @@ export function resolveWorkbookCompareCellVisual({
   defaultTextColor,
 }: ResolveWorkbookCompareCellVisualOptions): WorkbookCompareCellVisual {
   if (!compareCell?.changed) {
-    const neutralContentBackground = T.bg0 === T.bg1 ? T.bg2 : T.bg1;
     return {
       background: isHeaderRow
         ? T.workbookHeaderBg
-        : hasEntry ? (hasContent ? neutralContentBackground : T.bg0) : T.bg2,
+        : hasEntry ? (hasContent ? T.workbookCellBg : T.workbookEmptyBg) : T.workbookMissingBg,
       border: hasEntry ? T.workbookGridBorderStrong : T.workbookGridBorder,
       textColor: isHeaderRow ? T.t0 : defaultTextColor,
-      maskOverlay: compareCell?.masked && hasContent ? `${T.bg1}22` : null,
+      maskOverlay: compareCell?.masked && hasContent ? `${T.workbookCellBg}22` : null,
     };
   }
 

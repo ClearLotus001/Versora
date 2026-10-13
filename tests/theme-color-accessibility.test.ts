@@ -73,6 +73,29 @@ test('theme text roles retain accessible contrast on their intended surfaces', (
   }
 });
 
+test('workbook surfaces and whitespace differences retain accessible contrast in every theme', () => {
+  for (const themeKey of ['dark', 'light', 'hc'] as const) {
+    const theme = getThemeTokensSnapshot(themeKey);
+    const textPairs = [
+      ['cell text', theme.t0, theme.workbookCellBg],
+      ['empty cell text', theme.t0, theme.workbookEmptyBg],
+      ['missing cell text', theme.t0, theme.workbookMissingBg],
+      ['header text', theme.t0, theme.workbookHeaderBg],
+      ['whitespace text', theme.whitespaceTx, theme.whitespaceBg],
+      ['whitespace inline text', theme.whitespaceTx, theme.whitespaceHl],
+    ] as const;
+    for (const [label, foreground, background] of textPairs) {
+      const ratio = contrastRatio(foreground, background);
+      assert.ok(ratio >= 4.5, `${themeKey} ${label}: ${ratio.toFixed(2)}:1`);
+    }
+
+    for (const background of [theme.whitespaceBg, theme.whitespaceHl, theme.workbookCellBg]) {
+      const ratio = contrastRatio(theme.whitespaceBrd, background);
+      assert.ok(ratio >= 3, `${themeKey} whitespace edge on ${background}: ${ratio.toFixed(2)}:1`);
+    }
+  }
+});
+
 test('source badges use theme-owned colors with accessible contrast', () => {
   const css = fs.readFileSync('src/styles/app.css', 'utf8');
 

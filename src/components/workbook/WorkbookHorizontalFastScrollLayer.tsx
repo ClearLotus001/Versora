@@ -144,7 +144,7 @@ export default function WorkbookHorizontalFastScrollLayer({
           right: 0,
           height: bodyViewportHeight,
           overflow: 'hidden',
-          background: 'var(--bg0)',
+          background: 'var(--workbook-canvas-bg)',
         }}>
         <div
           style={{
@@ -164,7 +164,7 @@ export default function WorkbookHorizontalFastScrollLayer({
                     left: 0,
                     right: 0,
                     height: segment.height,
-                    background: 'var(--bg1)',
+                    background: 'var(--workbook-cell-bg)',
                     borderBottom: '1px solid var(--border)',
                   }}
                 />

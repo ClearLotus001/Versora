@@ -2,7 +2,6 @@ import type {
   DiffLine,
   SplitRow,
   WorkbookCompareMode,
-  WorkbookPrecomputedDeltaPayload,
 } from '@/types';
 import type { WorkbookSection } from '@/utils/workbook/workbookSections';
 import { parseWorkbookDisplayLine } from '@/utils/workbook/workbookDisplay';
@@ -12,7 +11,6 @@ import {
   alignWorkbookEntries,
   createWorkbookAlignmentEntry,
 } from '@/utils/workbook/workbookAlignment';
-import { buildWorkbookRowDelta, hydrateWorkbookRowDelta } from '@/utils/workbook/workbookDelta';
 import { workbookDebugLog, isWorkbookDebugEnabled } from '@/utils/workbook/workbookDebug';
 
 export interface IndexedWorkbookSectionRows {
@@ -20,6 +18,7 @@ export interface IndexedWorkbookSectionRows {
 }
 
 export interface WorkbookSectionRowIndex {
+  artifactProvider?: import('@/utils/workbook/workbookArtifactProvider').WorkbookArtifactProvider;
   get(sectionName: string): IndexedWorkbookSectionRows | undefined;
 }
 
@@ -31,11 +30,6 @@ const workbookSectionRowIndexCache = new WeakMap<
   DiffLine[],
   WeakMap<WorkbookSection[], Map<WorkbookCompareMode, WorkbookSectionRowIndex>>
 >();
-const workbookSectionRowIndexFromPrecomputedDeltaCache = new WeakMap<
-  DiffLine[],
-  WeakMap<WorkbookPrecomputedDeltaPayload, WorkbookSectionRowIndex>
->();
-
 function createWorkbookSectionRowIndex(
   resolveRows: (sectionName: string) => IndexedWorkbookSectionRows | undefined,
 ): WorkbookSectionRowIndex {
@@ -71,25 +65,6 @@ function buildSplitRow(
 }
 
 function makeSideScopedEqualLine(
-  line: DiffLine,
-  side: 'base' | 'mine',
-): DiffLine {
-  return side === 'base'
-    ? {
-        ...line,
-        mine: null,
-        mineLineNo: null,
-        mineCharSpans: null,
-      }
-    : {
-        ...line,
-        base: null,
-        baseLineNo: null,
-        baseCharSpans: null,
-      };
-}
-
-function makeSideScopedLine(
   line: DiffLine,
   side: 'base' | 'mine',
 ): DiffLine {
@@ -286,118 +261,5 @@ export function buildWorkbookSectionRowIndex(
   });
 
   compareModeCache.set(compareMode, nextIndex);
-  return nextIndex;
-}
-
-export function buildWorkbookSectionRowIndexFromPrecomputedDelta(
-  diffLines: DiffLine[],
-  payload: WorkbookPrecomputedDeltaPayload | null | undefined,
-): WorkbookSectionRowIndex {
-  if (!payload || payload.sections.length === 0) return EMPTY_WORKBOOK_SECTION_ROW_INDEX;
-
-  let payloadCache = workbookSectionRowIndexFromPrecomputedDeltaCache.get(diffLines);
-  if (!payloadCache) {
-    payloadCache = new WeakMap();
-    workbookSectionRowIndexFromPrecomputedDeltaCache.set(diffLines, payloadCache);
-  }
-  const cached = payloadCache.get(payload);
-  if (cached) return cached;
-
-  const lineSheetContextLookup = buildWorkbookLineSheetContextLookup(diffLines);
-  const sectionPayloadByName = new Map(
-    payload.sections.map((section) => [section.name, section] as const),
-  );
-  const nextIndex = createWorkbookSectionRowIndex((sectionName) => {
-    const section = sectionPayloadByName.get(sectionName);
-    if (!section) return undefined;
-
-    const explicitRows: SplitRow[] = section.rows.flatMap((row) => {
-      const leftLine = row.leftLineIdx != null ? (diffLines[row.leftLineIdx] ?? null) : null;
-      const rightLine = row.rightLineIdx != null ? (diffLines[row.rightLineIdx] ?? null) : null;
-      const leftContext = row.leftLineIdx != null ? lineSheetContextLookup.get(row.leftLineIdx) : null;
-      const rightContext = row.rightLineIdx != null ? lineSheetContextLookup.get(row.rightLineIdx) : null;
-      const keepLeft = Boolean(leftLine && leftContext?.baseSheetName === section.name);
-      const keepRight = Boolean(rightLine && rightContext?.mineSheetName === section.name);
-      if (!keepLeft && !keepRight) return [];
-
-      const scopedLeft = keepLeft && leftLine ? makeSideScopedLine(leftLine, 'base') : null;
-      const scopedRight = keepRight && rightLine ? makeSideScopedLine(rightLine, 'mine') : null;
-      const nextLineIdxs = Array.from(new Set([
-        ...(keepLeft && row.leftLineIdx != null ? [row.leftLineIdx] : []),
-        ...(keepRight && row.rightLineIdx != null ? [row.rightLineIdx] : []),
-      ]));
-      const shouldReusePrecomputedDelta = (
-        keepLeft === Boolean(leftLine)
-        && keepRight === Boolean(rightLine)
-      );
-
-      if (
-        isWorkbookDebugEnabled()
-        && leftLine
-        && rightLine
-        && leftContext?.baseSheetName !== rightContext?.mineSheetName
-      ) {
-        workbookDebugLog('sheet-index/precomputed-cross-sheet-row', {
-          sectionName: section.name,
-          payloadLineIdx: row.lineIdx,
-          leftLineIdx: row.leftLineIdx,
-          rightLineIdx: row.rightLineIdx,
-          leftSheetName: leftContext?.baseSheetName ?? null,
-          rightSheetName: rightContext?.mineSheetName ?? null,
-          keepLeft,
-          keepRight,
-          reusePrecomputedDelta: shouldReusePrecomputedDelta,
-          changedColumns: row.changedColumns,
-        });
-      }
-
-      return [{
-        left: scopedLeft,
-        right: scopedRight,
-        lineIdx: nextLineIdxs[0] ?? row.lineIdx,
-        lineIdxs: nextLineIdxs.length > 0 ? nextLineIdxs : row.lineIdxs,
-        workbookRowDelta: shouldReusePrecomputedDelta
-          ? hydrateWorkbookRowDelta(row)
-          : buildWorkbookRowDelta(scopedLeft, scopedRight, undefined, payload.compareMode),
-      }];
-    });
-    const explicitLineIdxSet = new Set(
-      explicitRows.flatMap((row) => row.lineIdxs),
-    );
-    const sectionStartLineIdx = section.startLineIdx ?? 0;
-    const sectionEndLineIdx = section.endLineIdx ?? sectionStartLineIdx;
-    const implicitEqualRows = diffLines
-      .slice(sectionStartLineIdx + 1, sectionEndLineIdx + 1)
-      .flatMap((line, localIndex): SplitRow[] => {
-        const lineIdx = sectionStartLineIdx + 1 + localIndex;
-        if (line.type !== 'equal' || explicitLineIdxSet.has(lineIdx)) return [];
-        const context = lineSheetContextLookup.get(lineIdx);
-        const parsedBase = line.base ? parseWorkbookDisplayLine(line.base) : null;
-        const parsedMine = line.mine ? parseWorkbookDisplayLine(line.mine) : null;
-        const keepLeft = parsedBase?.kind === 'row' && context?.baseSheetName === section.name;
-        const keepRight = parsedMine?.kind === 'row' && context?.mineSheetName === section.name;
-        if (!keepLeft && !keepRight) return [];
-
-        const scopedLeft = keepLeft ? makeSideScopedLine(line, 'base') : null;
-        const scopedRight = keepRight ? makeSideScopedLine(line, 'mine') : null;
-        return [{
-          left: scopedLeft,
-          right: scopedRight,
-          lineIdx,
-          lineIdxs: [lineIdx],
-          workbookRowDelta: buildWorkbookRowDelta(
-            scopedLeft,
-            scopedRight,
-            undefined,
-            payload.compareMode,
-          ),
-        }];
-      });
-    const rows = [...explicitRows, ...implicitEqualRows]
-      .sort((left, right) => left.lineIdx - right.lineIdx);
-    return { rows };
-  });
-
-  payloadCache.set(payload, nextIndex);
   return nextIndex;
 }

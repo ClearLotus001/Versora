@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import { EMPTY_CLI_ARGS, type CliArgs } from './cliArgs';
 import { logMainError, logMainWarn } from './logging.js';
-import { resolveLaunchCliArgsFromArgv } from './externalDiffRequest';
+import { preserveExternalDiffTempInputsSync, resolveLaunchCliArgsFromArgv } from './externalDiffRequest';
 import { readInstallerBootstrapSync } from './installerBootstrap';
 import {
   getMaintenanceModeFromArgv,
@@ -18,10 +18,12 @@ import {
 import { DEV_PROFILE_ROOT } from './main/constants';
 import { registerIpcHandlers } from './main/ipcHandlers';
 import { writeExternalDiffDebugLog } from './main/logger';
+import { abortWorkbookPreparations, hasWorkbookArtifactResources, releaseWorkbookArtifacts } from './main/workbookArtifactService';
+import { cancelWorkbookArtifactSearch } from './main/workbookSearchService';
 import {
   getMainWindow,
   initAppUpdater,
-  setActiveCliArgs,
+  createComparisonSession,
   setHasPendingLaunchDiffRequest,
 } from './main/state';
 import {
@@ -53,8 +55,8 @@ const gotSingleInstanceLock = maintenanceMode ? true : app.requestSingleInstance
 
 if (gotSingleInstanceLock) {
   parsedStartupCliArgs = resolveLaunchCliArgsFromArgv(process.argv);
-  cliArgs = parsedStartupCliArgs ?? { ...EMPTY_CLI_ARGS };
-  setActiveCliArgs(cliArgs);
+  cliArgs = parsedStartupCliArgs ? preserveExternalDiffTempInputsSync(parsedStartupCliArgs) : { ...EMPTY_CLI_ARGS };
+  createComparisonSession(cliArgs, parsedStartupCliArgs ?? undefined);
   setHasPendingLaunchDiffRequest(parsedStartupCliArgs !== null);
 }
 
@@ -73,9 +75,15 @@ let hasCleanedManagedTempOnExit = false;
 let pendingPostInstallMaintenanceTimer: NodeJS.Timeout | null = null;
 let deferredStartupHousekeepingTimer: NodeJS.Timeout | null = null;
 let deferredStartupHousekeepingScheduled = false;
+let workbookShutdownStarted = false;
+let workbookShutdownComplete = false;
 
 function cleanupManagedTempOnExit(reason: string) {
   if (hasCleanedManagedTempOnExit) return;
+  if (reason === 'process:exit' && hasWorkbookArtifactResources()) {
+    abortWorkbookPreparations();
+    return;
+  }
   hasCleanedManagedTempOnExit = true;
 
   writeExternalDiffDebugLog('managed-temp:cleanup-on-exit', {
@@ -144,6 +152,18 @@ app.on('before-quit', (_event) => {
   });
   clearPendingPostInstallMaintenanceTimer();
   clearDeferredStartupHousekeepingTimer();
+  if (!workbookShutdownComplete) {
+    _event.preventDefault();
+    if (workbookShutdownStarted) return;
+    workbookShutdownStarted = true;
+    void cancelWorkbookArtifactSearch().then(() => releaseWorkbookArtifacts()).catch(error => {
+      logMainError('workbook-shutdown', error instanceof Error ? error.message : String(error));
+    }).finally(() => {
+      workbookShutdownComplete = true;
+      app.quit();
+    });
+    return;
+  }
   cleanupManagedTempOnExit('app:before-quit');
 });
 
@@ -198,7 +218,7 @@ if (maintenanceMode) {
       parsedCliArgs: nextArgs,
     });
     if (nextArgs) {
-      setActiveCliArgs(nextArgs);
+      createComparisonSession(preserveExternalDiffTempInputsSync(nextArgs), nextArgs);
       setHasPendingLaunchDiffRequest(true);
       notifyCliArgsUpdated();
     }

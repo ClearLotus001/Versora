@@ -8,8 +8,6 @@ import { useAppStore } from '@/store/appStore';
 
 interface UseAppChromeEffectsArgs {
   revisionOptionsRef: MutableRefObject<SvnRevisionInfo[]>;
-  artifactNoticeKey: string;
-  diffSourceNoticeKey: string;
   hasLoadedDiff: boolean;
   hasLoadedDiffRef: MutableRefObject<boolean>;
   workbookCompareModeRef: MutableRefObject<WorkbookCompareMode>;
@@ -17,8 +15,6 @@ interface UseAppChromeEffectsArgs {
 
 export default function useAppChromeEffects({
   revisionOptionsRef,
-  artifactNoticeKey,
-  diffSourceNoticeKey,
   hasLoadedDiff,
   hasLoadedDiffRef,
   workbookCompareModeRef,
@@ -28,8 +24,6 @@ export default function useAppChromeEffects({
   const isElectron = useAppStore((s) => s.isElectron);
   const usesNativeWindowControls = useAppStore((s) => s.usesNativeWindowControls);
   const revisionOptions = useAppStore((s) => s.revisionOptions);
-  const setArtifactNoticeDismissed = useAppStore((s) => s.setArtifactNoticeDismissed);
-  const setDiffSourceNoticeDismissed = useAppStore((s) => s.setDiffSourceNoticeDismissed);
   const workbookCompareMode = useAppStore((s) => s.workbookCompareMode);
 
   // ── Persisted settings (derived from store) ───────────────────────────
@@ -91,14 +85,6 @@ export default function useAppChromeEffects({
   useEffect(() => {
     revisionOptionsRef.current = revisionOptions;
   }, [revisionOptions, revisionOptionsRef]);
-
-  useEffect(() => {
-    setArtifactNoticeDismissed(false);
-  }, [artifactNoticeKey, setArtifactNoticeDismissed]);
-
-  useEffect(() => {
-    setDiffSourceNoticeDismissed(false);
-  }, [diffSourceNoticeKey, setDiffSourceNoticeDismissed]);
 
   useEffect(() => {
     clearTokenCache();

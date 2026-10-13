@@ -1,6 +1,8 @@
+import { createWorkbookArtifactFixture } from '@/utils/app/workbookArtifactFixture';
 import { computeDiff } from '@/engine/text/diff';
 import { attachLineBlameToDiffLines } from '@/utils/diff/lineBlame';
 import { prepareTextDiffAnalysisFromDiffLines } from '@/utils/diff/preparedTextAnalysis';
+import { swapDiffDataSides } from '@/utils/diff/swapDiffSides';
 import type { DiffData, LayoutMode, LineBlameLine, SvnRevisionInfo } from '@/types';
 
 interface E2ERevisionPayload {
@@ -86,13 +88,10 @@ export function buildE2EDiffData(payload: E2ELoadTextDiffPayload): DiffData {
     compareContext: payload.compareContext ?? 'literal_two_file_compare',
     baseContent: payload.baseContent,
     mineContent: payload.mineContent,
-    baseBytes: null,
-    mineBytes: null,
     analysisSnapshotsByMode: {
       strict: {
         compareMode: 'strict',
         textAnalysis: prepareTextDiffAnalysisFromDiffLines(diffLines),
-        workbookAnalysis: null,
       },
     },
     revisionOptions: payload.revisionOptions ?? null,
@@ -127,9 +126,8 @@ export function buildE2EWorkbookDiffData(payload: E2ELoadWorkbookDiffPayload): D
     compareContext: payload.compareContext ?? 'literal_two_file_compare',
     baseContent: payload.baseContent,
     mineContent: payload.mineContent,
-    baseBytes: null,
-    mineBytes: null,
     analysisSnapshotsByMode: null,
+    workbookArtifact: createWorkbookArtifactFixture(payload.baseContent, payload.mineContent),
     revisionOptions: payload.revisionOptions ?? null,
     baseRevisionInfo: payload.baseRevisionInfo ?? null,
     mineRevisionInfo: payload.mineRevisionInfo ?? null,
@@ -143,4 +141,12 @@ export function buildE2EWorkbookDiffData(payload: E2ELoadWorkbookDiffPayload): D
       source: 'local-dev',
     },
   };
+}
+
+/** Browser fixtures rebuild the artifact so swapping tests exercise actual cell direction. */
+export function swapE2EWorkbookDiffData(data: DiffData): DiffData {
+  if (!data.workbookArtifact?.artifactId.startsWith('fixture:')) throw new Error('Expected a workbook fixture');
+  const swapped = swapDiffDataSides({ ...data, workbookArtifact: null });
+  const descriptor = createWorkbookArtifactFixture(data.mineContent ?? '', data.baseContent ?? '', data.workbookArtifact.comparisonSessionId);
+  return { ...swapped, workbookArtifact: descriptor, baseWorkbookMetadata: descriptor.baseMetadata, mineWorkbookMetadata: descriptor.mineMetadata };
 }

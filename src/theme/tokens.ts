@@ -37,6 +37,11 @@ export interface ThemeTokens {
   chgHl: string;
   chgTx: string;
   chgBrd: string;
+  /* 仅空白差异，独立于搜索状态 */
+  whitespaceBg: string;
+  whitespaceHl: string;
+  whitespaceTx: string;
+  whitespaceBrd: string;
   /* 强调色 */
   acc: string;
   acc2: string;
@@ -55,6 +60,11 @@ export interface ThemeTokens {
   /* 工作表字段标题 */
   workbookHeaderBg: string;
   workbookHeaderBorder: string;
+  /* 工作表不透明底板 */
+  workbookCanvasBg: string;
+  workbookCellBg: string;
+  workbookEmptyBg: string;
+  workbookMissingBg: string;
   /* 工作表网格层级 */
   workbookGridBorder: string;
   workbookGridBorderStrong: string;
@@ -69,6 +79,9 @@ export interface ThemeTokens {
   /* 搜索 */
   searchHl: string;
   searchActiveBg: string;
+  /* 保留透明度，供文字对比度合成计算 */
+  textSelectionBg: string;
+  textSelectionEdge: string;
   /* 毛玻璃 */
   glassBlur: string;
 }
@@ -101,6 +114,10 @@ export const THEME_VAR_MAP: Record<keyof ThemeTokens, string> = {
   chgHl: '--diff-modify-hl',
   chgTx: '--diff-modify-text',
   chgBrd: '--diff-modify-border',
+  whitespaceBg: '--diff-whitespace-bg',
+  whitespaceHl: '--diff-whitespace-hl',
+  whitespaceTx: '--diff-whitespace-text',
+  whitespaceBrd: '--diff-whitespace-border',
   acc: '--accent',
   acc2: '--acc2',
   versionBase: '--version-base',
@@ -114,6 +131,10 @@ export const THEME_VAR_MAP: Record<keyof ThemeTokens, string> = {
   lnTx: '--ln-text',
   workbookHeaderBg: '--workbook-header-bg',
   workbookHeaderBorder: '--workbook-header-border',
+  workbookCanvasBg: '--workbook-canvas-bg',
+  workbookCellBg: '--workbook-cell-bg',
+  workbookEmptyBg: '--workbook-empty-bg',
+  workbookMissingBg: '--workbook-missing-bg',
   workbookGridBorder: '--workbook-grid-border',
   workbookGridBorderStrong: '--workbook-grid-border-strong',
   scrollThumb: '--scroll-thumb',
@@ -124,5 +145,7 @@ export const THEME_VAR_MAP: Record<keyof ThemeTokens, string> = {
   miniVp: '--mini-vp',
   searchHl: '--search-hl',
   searchActiveBg: '--search-active-bg',
+  textSelectionBg: '--text-selection-bg',
+  textSelectionEdge: '--text-selection-edge',
   glassBlur: '--glass-blur',
 };

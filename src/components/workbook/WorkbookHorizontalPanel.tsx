@@ -85,9 +85,9 @@ import { resolveWorkbookRegionHorizontalBounds } from '@/utils/workbook/workbook
 import { workbookDebugLog } from '@/utils/workbook/workbookDebug';
 import {
   getWorkbookColumnWidth,
-  measureWorkbookAutoFitColumnWidth,
   type WorkbookColumnWidthBySheet,
 } from '@/utils/workbook/workbookColumnWidths';
+import useWorkbookColumnAutoFit from '@/hooks/workbook/useWorkbookColumnAutoFit';
 import {
   expandCollapseBlock,
   expandCollapseBlockFully,
@@ -169,6 +169,7 @@ export interface WorkbookHorizontalPanelProps {
   freezeStateBySheet: Record<string, WorkbookFreezeState>;
   columnWidthBySheet: WorkbookColumnWidthBySheet;
   onColumnWidthChange: (sheetName: string, column: number, width: number) => void;
+  onOperationError?: (message: string) => void;
   onRevealHiddenRows: (sheetName: string, rowNumbers: number[]) => void;
   onRevealHiddenColumns: (sheetName: string, columns: number[]) => void;
   workbookSections: WorkbookSection[];
@@ -227,6 +228,7 @@ const WorkbookHorizontalPanel = memo(({
   freezeStateBySheet,
   columnWidthBySheet,
   onColumnWidthChange,
+  onOperationError,
   onRevealHiddenRows,
   onRevealHiddenColumns,
   workbookSections,
@@ -1399,16 +1401,10 @@ const WorkbookHorizontalPanel = memo(({
     });
   }, [activeWorkbookSection, baseVersion, mineVersion, requestSelection]);
 
-  const handleResizeColumn = useCallback((column: number, width: number) => {
-    if (!activeWorkbookSection) return;
-    onColumnWidthChange(activeWorkbookSection.name, column, width);
-  }, [activeWorkbookSection, onColumnWidthChange]);
-
-  const handleAutoFitColumn = useCallback((column: number) => {
-    if (!activeWorkbookSection) return;
-    const width = measureWorkbookAutoFitColumnWidth(sectionRows, column, fontSize);
-    onColumnWidthChange(activeWorkbookSection.name, column, width);
-  }, [activeWorkbookSection, fontSize, onColumnWidthChange, sectionRows]);
+  const { handleResizeColumn, handleAutoFitColumn } = useWorkbookColumnAutoFit({
+    provider: workbookSectionRowIndex.artifactProvider, sheet: activeWorkbookSection, compareMode, fontSize, active,
+    columnWidthBySheet, onColumnWidthChange, onOperationError,
+  });
   const handleRevealHiddenHeaderColumns = useCallback((columns: number[]) => {
     if (!activeWorkbookSection) return;
     revealAutoColumns(activeWorkbookSection.name, columns);
@@ -1435,7 +1431,7 @@ const WorkbookHorizontalPanel = memo(({
     onSelectColumn: handleSelectColumn,
     onRevealHiddenColumns: handleRevealHiddenHeaderColumns,
     onColumnWidthChange: handleResizeColumn,
-    onAutoFitColumn: handleAutoFitColumn,
+    onAutoFitColumn: (column) => { void handleAutoFitColumn(column); },
     stickyHeaderRowsHeight,
     stickyHeaderCanvasRows,
     baseVersion,

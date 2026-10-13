@@ -3,7 +3,6 @@ import type {
   DiffData,
   DiffLine,
   PreparedTextAnalysis,
-  PreparedWorkbookAnalysis,
   RevisionSelectionPair,
   WorkbookArtifactDiff,
   WorkbookCompareMode,
@@ -143,44 +142,17 @@ function swapArtifactDiff(diff: WorkbookArtifactDiff | null | undefined) {
   } satisfies WorkbookArtifactDiff;
 }
 
-function swapWorkbookAnalysis(analysis: PreparedWorkbookAnalysis): PreparedWorkbookAnalysis {
-  const diffLinesByMode = (Object.entries(analysis.diffLinesByMode) as Array<[
-    WorkbookCompareMode,
-    DiffLine[] | null,
-  ]>).reduce<PreparedWorkbookAnalysis['diffLinesByMode']>((next, [mode, lines]) => {
-    next[mode] = lines ? swapDiffLinesSides(lines) : null;
-    return next;
-  }, {});
-
-  return {
-    ...analysis,
-    diffLinesByMode,
-    workbookDeltaByMode: {},
-    metadata: {
-      base: analysis.metadata.mine,
-      mine: analysis.metadata.base,
-    },
-    artifactDiff: swapArtifactDiff(analysis.artifactDiff) ?? null,
-    // Row indexes and navigation anchors encode side-specific line indexes.
-    // They are intentionally discarded and rebuilt from the swapped canonical lines.
-    sectionsByMode: {},
-    navigationRegionsByMode: {},
-  };
-}
-
 function swapAnalysisSnapshot(snapshot: DiffAnalysisSnapshot): DiffAnalysisSnapshot {
   return {
     ...snapshot,
     textAnalysis: snapshot.textAnalysis
       ? swapPreparedTextAnalysis(snapshot.textAnalysis)
       : null,
-    workbookAnalysis: snapshot.workbookAnalysis
-      ? swapWorkbookAnalysis(snapshot.workbookAnalysis)
-      : null,
   };
 }
 
 export function swapDiffDataSides(data: DiffData): DiffData {
+  if (data.workbookArtifact) throw new Error('Workbook sides must be swapped by preparing a new artifact.');
   const next: DiffData = {
     ...data,
     isSideOrderSwapped: !data.isSideOrderSwapped,
@@ -188,8 +160,6 @@ export function swapDiffDataSides(data: DiffData): DiffData {
     mineName: data.baseName,
     baseContent: data.mineContent,
     mineContent: data.baseContent,
-    baseBytes: data.mineBytes,
-    mineBytes: data.baseBytes,
   };
 
   const swappedSnapshots = data.analysisSnapshotsByMode
