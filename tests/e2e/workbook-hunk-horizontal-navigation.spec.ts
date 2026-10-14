@@ -4,7 +4,74 @@ import '../../src/utils/app/e2eBridge';
 import {
   createWorkbookRowLine,
   createWorkbookSheetLine,
+  WORKBOOK_CELL_WIDTH,
 } from '../../src/utils/workbook/workbookDisplay';
+
+type WorkbookLayout = 'unified' | 'split-h' | 'split-v';
+
+function workbookScrollerSelector(layout: WorkbookLayout) {
+  return layout === 'split-h'
+    ? '.overflow-auto.relative'
+    : '.overflow-y-auto.overflow-x-auto.relative.min-w-0.min-h-0';
+}
+
+async function waitForInitialHunkFocus(page: Page, layout: WorkbookLayout) {
+  const selector = workbookScrollerSelector(layout);
+  const paneCount = layout === 'split-h' ? 2 : 1;
+  const targetWidth = WORKBOOK_CELL_WIDTH * (layout === 'split-v' ? 2 : 1);
+  // Workbook mode and the hunk counter appear before the initial guided focus
+  // finishes its three animation-frame callbacks. Observe the actual target.
+  await page.waitForFunction(({ scrollerSelector, expectedPanes, width }) => {
+    const panes = [...document.querySelectorAll<HTMLElement>(scrollerSelector)];
+    return panes.length === expectedPanes && panes.every((pane) => {
+      if (pane.scrollLeft <= 0) return false;
+      const canvas = pane.querySelector<HTMLCanvasElement>('[data-pulse] canvas');
+      if (!canvas?.width || !canvas.height) return false;
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width) return false;
+      const pixels = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+      let left = canvas.width;
+      let right = -1;
+      for (let index = 3; index < pixels.length; index += 4) {
+        if (!pixels[index]) continue;
+        const x = ((index - 3) / 4) % canvas.width;
+        left = Math.min(left, x); right = Math.max(right, x);
+      }
+      // The one changed cell's complete outline must lie inside the viewport.
+      const paintedWidth = (right - left + 1) * rect.width / canvas.width;
+      return left > 0 && right < canvas.width - 1 && paintedWidth >= width - 2;
+    });
+  }, { scrollerSelector: selector, expectedPanes: paneCount, width: targetWidth }, { timeout: 10_000 });
+  await page.evaluate(({ scrollerSelector, expectedPanes }) => new Promise<void>((resolve, reject) => {
+    let previous: number[] = [];
+    let stableFrames = 0;
+    let frame = 0;
+    const timeout = window.setTimeout(() => {
+      cancelAnimationFrame(frame);
+      reject(new Error('Initial workbook hunk focus did not settle'));
+    }, 10_000);
+    const tick = () => {
+      const offsets = [...document.querySelectorAll<HTMLElement>(scrollerSelector)].map((pane) => pane.scrollLeft);
+      const synchronized = offsets.length === expectedPanes && offsets.every((offset) => offset > 0
+        && Math.abs(offset - offsets[0]!) <= 1);
+      stableFrames = synchronized && offsets.every((offset, index) => offset === previous[index]) ? stableFrames + 1 : 0;
+      previous = offsets;
+      if (stableFrames >= 6) { clearTimeout(timeout); resolve(); return; }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+  }), { scrollerSelector: selector, expectedPanes: paneCount });
+}
+
+async function scrollAwayFromHunk(page: Page, layout: WorkbookLayout) {
+  const scrollers = page.locator(workbookScrollerSelector(layout));
+  // A real wheel gesture performs manual scrolling and interrupts navigation
+  // through the same input path as the user, without synthetic scroll events.
+  await scrollers.first().hover();
+  await page.mouse.wheel(-10_000, 0);
+  await expect.poll(() => scrollers.evaluateAll((elements) => elements.map((element) => element.scrollLeft)))
+    .toEqual(Array.from({ length: layout === 'split-h' ? 2 : 1 }, () => 0));
+}
 
 function buildWorkbook(rows: string[][]) {
   return [
@@ -15,7 +82,7 @@ function buildWorkbook(rows: string[][]) {
 
 async function loadWideWorkbookDiff(
   page: Page,
-  layout: 'unified' | 'split-h' | 'split-v' = 'split-h',
+  layout: WorkbookLayout = 'split-h',
 ) {
   const header = Array.from({ length: 20 }, (_, index) => `Column ${index + 1}`);
   const stable = Array.from({ length: 20 }, (_, index) => `Stable ${index + 1}`);
@@ -41,6 +108,7 @@ async function loadWideWorkbookDiff(
     workbookLayout: layout,
   });
   await page.waitForFunction(() => window.__SVN_DIFF_E2E__?.getSnapshot().isWorkbookMode === true);
+  await waitForInitialHunkFocus(page, layout);
 }
 
 test('clicking a single workbook hunk again scrolls both panes to its off-screen column', async ({ page }) => {
@@ -50,13 +118,7 @@ test('clicking a single workbook hunk again scrolls both panes to its off-screen
   await expect(paneScrollers).toHaveCount(2);
   await expect(page.getByText('1/1', { exact: true })).toBeVisible();
 
-  await paneScrollers.evaluateAll((elements) => {
-    elements.forEach((element) => {
-      element.scrollLeft = 0;
-      element.dispatchEvent(new Event('scroll'));
-    });
-  });
-  await expect.poll(() => paneScrollers.first().evaluate((element) => element.scrollLeft)).toBe(0);
+  await scrollAwayFromHunk(page, 'split-h');
 
   await page.getByRole('button', { name: /^(?:下一个差异块|Next hunk) \(F7\)$/ }).click();
 
@@ -73,13 +135,7 @@ test('F7 immediately refocuses an off-screen workbook hunk in both horizontal pa
   const paneScrollers = page.locator('.overflow-auto.relative');
   await expect(paneScrollers).toHaveCount(2);
   await expect(page.getByText('1/1', { exact: true })).toBeVisible();
-  await paneScrollers.evaluateAll((elements) => {
-    elements.forEach((element) => {
-      element.scrollLeft = 0;
-      element.dispatchEvent(new Event('scroll'));
-    });
-  });
-  await expect.poll(() => paneScrollers.first().evaluate((element) => element.scrollLeft)).toBe(0);
+  await scrollAwayFromHunk(page, 'split-h');
 
   await page.keyboard.press('F7');
 
@@ -95,12 +151,7 @@ for (const layout of ['split-v', 'unified'] as const) {
     const scroller = page.locator('.overflow-y-auto.overflow-x-auto.relative.min-w-0.min-h-0');
     await expect(scroller).toHaveCount(1);
     await expect(page.getByText('1/1', { exact: true }).first()).toBeVisible();
-    await page.waitForTimeout(700);
-    await scroller.evaluate((element) => {
-      element.scrollLeft = 0;
-      element.dispatchEvent(new Event('scroll'));
-    });
-    await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBe(0);
+    await scrollAwayFromHunk(page, layout);
 
     await page.keyboard.press('F7');
     await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
