@@ -108,14 +108,17 @@ export function createFullHorizontalWindow(columnCount: number): HorizontalWindo
   };
 }
 
-function shouldRetainHorizontalWindow(
+export function doesHorizontalWindowCoverViewport(
   nonFrozenPrefixSums: number[],
   currentRange: HorizontalWindow,
   scrollLeft: number,
   viewportWidth: number,
   frozenWidth: number,
 ): boolean {
-  if (currentRange.endIndex <= currentRange.startIndex) return false;
+  const columnCount = nonFrozenPrefixSums.length - 1;
+  if (columnCount === 0) return currentRange.startIndex === 0 && currentRange.endIndex === 0;
+  if (currentRange.startIndex < 0 || currentRange.endIndex <= currentRange.startIndex
+    || currentRange.endIndex > columnCount) return false;
 
   const totalNonFrozenWidth = nonFrozenPrefixSums[nonFrozenPrefixSums.length - 1] ?? 0;
   const availableWidth = Math.max(1, viewportWidth - frozenWidth);
@@ -123,8 +126,25 @@ function shouldRetainHorizontalWindow(
   const clampedScrollLeft = Math.max(0, Math.min(scrollLeft, maxScrollLeft));
   const windowStart = nonFrozenPrefixSums[currentRange.startIndex] ?? 0;
   const windowEnd = nonFrozenPrefixSums[currentRange.endIndex] ?? totalNonFrozenWidth;
+  return windowStart <= clampedScrollLeft
+    && windowEnd >= Math.min(totalNonFrozenWidth, clampedScrollLeft + availableWidth);
+}
+
+function shouldRetainHorizontalWindow(
+  nonFrozenPrefixSums: number[],
+  currentRange: HorizontalWindow,
+  scrollLeft: number,
+  viewportWidth: number,
+  frozenWidth: number,
+): boolean {
+  if (!doesHorizontalWindowCoverViewport(nonFrozenPrefixSums, currentRange, scrollLeft, viewportWidth, frozenWidth)) return false;
+  const totalNonFrozenWidth = nonFrozenPrefixSums[nonFrozenPrefixSums.length - 1] ?? 0;
+  const availableWidth = Math.max(1, viewportWidth - frozenWidth);
+  const clampedScrollLeft = Math.max(0, Math.min(scrollLeft, Math.max(0, totalNonFrozenWidth - availableWidth)));
+  const windowStart = nonFrozenPrefixSums[currentRange.startIndex] ?? 0;
+  const windowEnd = nonFrozenPrefixSums[currentRange.endIndex] ?? totalNonFrozenWidth;
   const visibleStart = clampedScrollLeft;
-  const visibleEnd = clampedScrollLeft + availableWidth;
+  const visibleEnd = Math.min(totalNonFrozenWidth, clampedScrollLeft + availableWidth);
   const windowWidth = Math.max(0, windowEnd - windowStart);
 
   if (windowWidth <= availableWidth) return true;
@@ -593,7 +613,7 @@ export function useHorizontalVirtualColumns({
     [resolvePaneState, shouldRenderAllColumns],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
@@ -663,7 +683,7 @@ export function useHorizontalVirtualColumns({
     };
   }, [applyWindowRange, frozenScrollRef]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyWindowRange(scrollLeftRef.current, viewportWidthRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, frozenScrollLeftState]);
@@ -702,23 +722,25 @@ export function useHorizontalVirtualColumns({
   }, [frozenScrollRef, resolvePaneState, scrollRef, shouldRenderAllColumns, syncKey]);
 
   const paneState = resolvePaneState(viewportWidth);
-  const effectiveWindowRange = useMemo(() => (
-    shouldRenderAllColumns
-      ? createFullHorizontalWindow(layout.nonFrozenEntries.length)
-      : syncKeyRef.current !== syncKey
-      ? computeHorizontalWindow(
+  const effectiveWindowRange = useMemo(() => {
+    if (shouldRenderAllColumns) return createFullHorizontalWindow(layout.nonFrozenEntries.length);
+    const resetViewport = syncKeyRef.current !== syncKey;
+    const scrollLeft = resetViewport ? 0 : scrollLeftRef.current;
+    return resetViewport || !doesHorizontalWindowCoverViewport(
+      layout.nonFrozenPrefixSums, windowRange, scrollLeft, viewportWidth, paneState.visibleFrozenWidth,
+    ) ? computeHorizontalWindow(
         layout.nonFrozenDisplayWidths,
         layout.clampedFrozenCount,
-        0,
-        viewportWidthRef.current,
+        scrollLeft,
+        viewportWidth,
         paneState.visibleFrozenWidth,
         layout.positionedMergedRanges,
         overscanMin,
         overscanFactor,
         layout.nonFrozenPrefixSums,
       )
-      : windowRange
-  ), [layout, overscanFactor, overscanMin, paneState.visibleFrozenWidth, shouldRenderAllColumns, syncKey, windowRange]);
+      : windowRange;
+  }, [layout, overscanFactor, overscanMin, paneState.visibleFrozenWidth, shouldRenderAllColumns, syncKey, viewportWidth, windowRange]);
 
   const effectiveFrozenWindowRange = useMemo(() => (
     shouldRenderAllColumns

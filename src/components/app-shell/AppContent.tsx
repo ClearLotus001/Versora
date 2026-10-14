@@ -13,7 +13,6 @@ import type {
   WorkbookSelectionState,
 } from '@/types';
 import type { LoadPhase, WorkbookUiController } from '@/hooks/app';
-import { cssAlpha, cssVar } from '@/theme/cssUtils';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
 import type { TextLayoutSnapshotsByMode } from '@/utils/diff/textLayoutState';
 import type { WorkbookLayoutSnapshotsByMode } from '@/utils/workbook/workbookLayoutState';
@@ -32,8 +31,7 @@ import WorkbookContextMenu from '@/components/workbook/WorkbookContextMenu';
 
 const UnifiedPanel = lazy(() => import('@/components/diff/UnifiedPanel'));
 const SplitPanel = lazy(() => import('@/components/diff/SplitPanel'));
-const WorkbookComparePanel = lazy(() => import('@/components/workbook/WorkbookComparePanel'));
-const WorkbookHorizontalPanel = lazy(() => import('@/components/workbook/WorkbookHorizontalPanel'));
+const WorkbookPanel = lazy(() => import('@/components/workbook/WorkbookPanel'));
 
 type AppPanelProps = UnifiedPanelProps;
 
@@ -128,21 +126,31 @@ function InitialVisualReadySignal({
   return null;
 }
 
-function renderLoadingState(loadingLabel: string, onReady?: () => void) {
+function DiffLoadingState({
+  loadingLabel,
+  onReady,
+  overlay = false,
+}: {
+  loadingLabel: string;
+  onReady?: (() => void) | undefined;
+  overlay?: boolean;
+}) {
   return (
     <div
-      data-testid="diff-loading-state"
+      data-testid={overlay ? 'diff-loading-overlay' : 'diff-loading-state'}
       role="status"
       aria-live="polite"
-      className="flex-1 w-full min-w-0 min-h-0 flex items-center justify-center p-6">
+      aria-atomic="true"
+      className={overlay
+        ? 'diff-loading-surface diff-loading-surface--overlay absolute inset-0 z-[60] flex items-center justify-center p-6 pointer-events-auto cursor-progress'
+        : 'diff-loading-surface flex-1 w-full min-w-0 min-h-0 flex items-center justify-center p-6'}>
       <InitialVisualReadySignal onReady={onReady} />
-      <div className="grid gap-2.5 justify-items-center text-text-primary">
+      <div className="diff-loading-card grid gap-3 justify-items-center p-[20px_28px] rounded-2xl border border-border-default text-text-primary">
         <div
           aria-hidden="true"
-          className="size-7 rounded-full border-2 border-border-default animate-spin"
-          style={{ borderTopColor: 'var(--acc2)' }}
+          className="diff-loading-indicator size-7 rounded-full border-2 border-border-default"
         />
-        <span className="text-[13px] font-semibold">{loadingLabel}</span>
+        <span className="text-center text-[13px] font-semibold">{loadingLabel}</span>
       </div>
     </div>
   );
@@ -159,9 +167,13 @@ function renderBootstrappingState() {
   );
 }
 
-function renderLazyPanel(content: ReactNode, loadingLabel: string, onReady?: () => void) {
+function renderLazyPanel(
+  content: ReactNode,
+  loadingLabel: string,
+  onReady?: () => void,
+) {
   return (
-    <Suspense fallback={renderLoadingState(loadingLabel, onReady)}>
+    <Suspense fallback={<DiffLoadingState loadingLabel={loadingLabel} onReady={onReady} />}>
       <>
         <InitialVisualReadySignal onReady={onReady} />
         {content}
@@ -230,12 +242,12 @@ export default function AppContent({
   }
 
   if (!hasLoadedDiff && loadPhase === 'loading') {
-    return renderLoadingState(loadingLabel, onInitialVisualReady);
+    return <DiffLoadingState loadingLabel={loadingLabel} onReady={onInitialVisualReady} />;
   }
 
   if (!hasLoadedDiff) {
     return (
-      <>
+      <div className="comparison-content-enter flex-1 flex min-h-0 min-w-0">
         <InitialVisualReadySignal onReady={onInitialVisualReady} />
         <HomeStartPanel
           error={loadError}
@@ -244,7 +256,7 @@ export default function AppContent({
           onOpenLocalFileCompare={onOpenLocalFileCompare}
           onOpenSvnConfig={onOpenSvnConfig}
         />
-      </>
+      </div>
     );
   }
 
@@ -254,9 +266,45 @@ export default function AppContent({
       ? workbookLayoutSnapshots['split-v']
       : workbookLayoutSnapshots.unified
   ) as WorkbookCompareLayoutSnapshot | null;
+  const sharedWorkbookPanelProps = {
+    ...panelProps,
+    active: true,
+    baseTitle: baseRoleTitle,
+    mineTitle: mineRoleTitle,
+    baseVersionLabel,
+    mineVersionLabel,
+    activeDiffRegion: activeWorkbookDiffRegion,
+    navigationTargetCell: activeWorkbookTargetCell,
+    selection: workbookSelection,
+    onSelectionRequest: onWorkbookSelectionRequest,
+    onWorkbookNavigationReady,
+    baseWorkbookMetadata,
+    mineWorkbookMetadata,
+    workbookHiddenStateBySheet,
+    freezeStateBySheet: workbookFreezeBySheet,
+    columnWidthBySheet: workbookColumnWidthBySheet,
+    onColumnWidthChange: onWorkbookColumnWidthChange,
+    onOperationError: onWorkbookOperationError,
+    onRevealHiddenRows: handleRevealHiddenRows,
+    onRevealHiddenColumns: handleRevealHiddenColumns,
+    workbookSections,
+    workbookSectionRowIndex,
+    visibilityModel: workbookVisibilityModel,
+    activeWorkbookSheetName,
+    onActiveWorkbookSheetChange,
+    compareMode: workbookCompareMode,
+    sharedExpandedBlocks: activeWorkbookSharedExpandedBlocks,
+    onExpandedBlocksChange: onWorkbookExpandedBlocksChange,
+    showPerfDebug: isDevMode,
+    showHiddenColumns,
+    tooltipDisabled: isLoadingDiff || suppressWorkbookTooltips,
+    onLayoutSnapshotChange: onWorkbookLayoutSnapshotChange,
+  };
 
   return (
-    <div className="relative flex-1 flex overflow-hidden min-h-0 min-w-0">
+    <div
+      data-testid="comparison-content"
+      className={`${isWorkbookMode ? '' : 'comparison-content-enter '}relative flex-1 flex overflow-hidden min-h-0 min-w-0`}>
       {!isWorkbookMode && layout === 'unified' && (
         renderLazyPanel(
           <UnifiedPanel
@@ -304,41 +352,13 @@ export default function AppContent({
           {layout !== 'split-h' && (
             <div className="relative flex w-full h-full min-w-0 min-h-0">
               {renderLazyPanel(
-                <WorkbookComparePanel
-                  {...panelProps}
-                  active
-                  baseTitle={baseRoleTitle}
-                  mineTitle={mineRoleTitle}
-                  baseVersionLabel={baseVersionLabel}
-                  mineVersionLabel={mineVersionLabel}
-                  mode={workbookComparePanelMode}
-                  activeDiffRegion={activeWorkbookDiffRegion}
-                  navigationTargetCell={activeWorkbookTargetCell}
-                  selection={workbookSelection}
-                  onSelectionRequest={onWorkbookSelectionRequest}
-                  onWorkbookNavigationReady={onWorkbookNavigationReady}
-                  baseWorkbookMetadata={baseWorkbookMetadata}
-                  mineWorkbookMetadata={mineWorkbookMetadata}
-                  workbookHiddenStateBySheet={workbookHiddenStateBySheet}
-                  freezeStateBySheet={workbookFreezeBySheet}
-                  columnWidthBySheet={workbookColumnWidthBySheet}
-                  onColumnWidthChange={onWorkbookColumnWidthChange}
-                  onOperationError={onWorkbookOperationError}
-                  onRevealHiddenRows={handleRevealHiddenRows}
-                  onRevealHiddenColumns={handleRevealHiddenColumns}
-                  workbookSections={workbookSections}
-                  workbookSectionRowIndex={workbookSectionRowIndex}
-                  visibilityModel={workbookVisibilityModel}
-                  activeWorkbookSheetName={activeWorkbookSheetName}
-                  onActiveWorkbookSheetChange={onActiveWorkbookSheetChange}
-                  compareMode={workbookCompareMode}
-                  sharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
-                  onExpandedBlocksChange={onWorkbookExpandedBlocksChange}
-                  showPerfDebug={isDevMode}
-                  showHiddenColumns={showHiddenColumns}
-                  tooltipDisabled={isLoadingDiff || suppressWorkbookTooltips}
-                  layoutSnapshot={workbookComparePanelSnapshot}
-                  onLayoutSnapshotChange={onWorkbookLayoutSnapshotChange}
+                <WorkbookPanel
+                  kind="compare"
+                  panelProps={{
+                    ...sharedWorkbookPanelProps,
+                    mode: workbookComparePanelMode,
+                    layoutSnapshot: workbookComparePanelSnapshot,
+                  }}
                 />,
                 loadingLabel,
                 !isLoadingDiff ? onInitialVisualReady : undefined,
@@ -348,40 +368,12 @@ export default function AppContent({
           {layout === 'split-h' && (
             <div className="relative flex w-full h-full min-w-0 min-h-0">
               {renderLazyPanel(
-                <WorkbookHorizontalPanel
-                  {...panelProps}
-                  active
-                  baseTitle={baseRoleTitle}
-                  mineTitle={mineRoleTitle}
-                  baseVersionLabel={baseVersionLabel}
-                  mineVersionLabel={mineVersionLabel}
-                  activeDiffRegion={activeWorkbookDiffRegion}
-                  navigationTargetCell={activeWorkbookTargetCell}
-                  selection={workbookSelection}
-                  onSelectionRequest={onWorkbookSelectionRequest}
-                  onWorkbookNavigationReady={onWorkbookNavigationReady}
-                  baseWorkbookMetadata={baseWorkbookMetadata}
-                  mineWorkbookMetadata={mineWorkbookMetadata}
-                  workbookHiddenStateBySheet={workbookHiddenStateBySheet}
-                  freezeStateBySheet={workbookFreezeBySheet}
-                  columnWidthBySheet={workbookColumnWidthBySheet}
-                  onColumnWidthChange={onWorkbookColumnWidthChange}
-                  onOperationError={onWorkbookOperationError}
-                  onRevealHiddenRows={handleRevealHiddenRows}
-                  onRevealHiddenColumns={handleRevealHiddenColumns}
-                  workbookSections={workbookSections}
-                  workbookSectionRowIndex={workbookSectionRowIndex}
-                  visibilityModel={workbookVisibilityModel}
-                  activeWorkbookSheetName={activeWorkbookSheetName}
-                  onActiveWorkbookSheetChange={onActiveWorkbookSheetChange}
-                  compareMode={workbookCompareMode}
-                  sharedExpandedBlocks={activeWorkbookSharedExpandedBlocks}
-                  onExpandedBlocksChange={onWorkbookExpandedBlocksChange}
-                  showPerfDebug={isDevMode}
-                  showHiddenColumns={showHiddenColumns}
-                  tooltipDisabled={isLoadingDiff || suppressWorkbookTooltips}
-                  layoutSnapshot={workbookLayoutSnapshots['split-h'] as WorkbookHorizontalLayoutSnapshot | null}
-                  onLayoutSnapshotChange={onWorkbookLayoutSnapshotChange}
+                <WorkbookPanel
+                  kind="horizontal"
+                  panelProps={{
+                    ...sharedWorkbookPanelProps,
+                    layoutSnapshot: workbookLayoutSnapshots['split-h'] as WorkbookHorizontalLayoutSnapshot | null,
+                  }}
                 />,
                 loadingLabel,
                 !isLoadingDiff ? onInitialVisualReady : undefined,
@@ -400,22 +392,7 @@ export default function AppContent({
       )}
 
       {isLoadingDiff && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-bg-base/75 backdrop-blur-sm pointer-events-auto cursor-progress">
-          <div
-            className="grid gap-2.5 justify-items-center p-[18px_24px] rounded-2xl border border-border-default"
-            style={{
-              color: cssVar('t1'),
-              background: cssAlpha('bg1', 'ee'),
-              boxShadow: `0 24px 48px -28px ${cssVar('border2')}`,
-            }}>
-            <div
-              aria-hidden="true"
-              className="size-6 rounded-full border-2 border-border-default animate-spin"
-              style={{ borderTopColor: cssVar('acc2') }}
-            />
-            <span className="text-[13px] font-semibold">{loadingLabel}</span>
-          </div>
-        </div>
+        <DiffLoadingState loadingLabel={loadingLabel} overlay />
       )}
     </div>
   );

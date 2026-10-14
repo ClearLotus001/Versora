@@ -2,9 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { flushSync } from 'react-dom';
 import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
 import {
-  VIRTUAL_FAST_SCROLL_ACTIVE_ATTRIBUTE,
   VIRTUAL_FAST_SCROLL_END_EVENT,
-  VIRTUAL_FAST_SCROLL_OWNER_ATTRIBUTE,
   beginVirtualFastScrollSession,
   endVirtualFastScrollSession,
   getVirtualFastScrollOwner,
@@ -252,7 +250,7 @@ export function useVariableVirtual(
     setRangeState(next);
   }, [averageHeight, enabled, heights.length, overscanFactor, overscanMin, prefixSums, totalH]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!enabled) return;
     const el = scrollRef.current;
     if (!el) return;
@@ -267,8 +265,9 @@ export function useVariableVirtual(
 
     const nextViewH = Math.max(0, el.clientHeight);
     viewHRef.current = nextViewH;
+    latestScrollTopRef.current = Math.max(0, Math.round(el.scrollTop));
     setViewH(prev => (prev === nextViewH ? prev : nextViewH));
-    applyRange(Math.max(0, Math.round(el.scrollTop)), nextViewH);
+    applyRange(latestScrollTopRef.current, nextViewH);
 
     return () => ro.disconnect();
   }, [applyRange, enabled, scrollRef]);
@@ -342,14 +341,11 @@ export function useVariableVirtual(
       el.removeEventListener(VIRTUAL_FAST_SCROLL_END_EVENT, onFastScrollEnd);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (implicitFastScrollTimeout != null) window.clearTimeout(implicitFastScrollTimeout);
-      if (getVirtualFastScrollOwner(el) === 'implicit') {
-        el.removeAttribute(VIRTUAL_FAST_SCROLL_ACTIVE_ATTRIBUTE);
-        el.removeAttribute(VIRTUAL_FAST_SCROLL_OWNER_ATTRIBUTE);
-      }
+      endVirtualFastScrollSession(el, 'implicit');
     };
   }, [applyRange, enabled, enableFastScrollSession, heights.length, prefixSums, scrollRef, totalH]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyRange(latestScrollTopRef.current, viewHRef.current);
   }, [applyRange]);
 
@@ -369,20 +365,24 @@ export function useVariableVirtual(
     applyRange(0, viewHRef.current);
   }, [applyRange, enabled, getScrollFollowers, scrollRef, syncKey]);
 
-  const effectiveRangeState = useMemo(() => (
-    syncKeyRef.current !== syncKey
-      ? computeVariableRange({
-        heightsLength: heights.length,
-        prefixSums,
-        totalH,
-        averageHeight,
-        scrollTop: 0,
-        viewH: viewHRef.current,
-        overscanMin,
-        overscanFactor,
-      })
-      : rangeState
-  ), [averageHeight, heights.length, overscanFactor, overscanMin, prefixSums, rangeState, syncKey, totalH]);
+  const effectiveRangeState = useMemo(() => {
+    const resetViewport = syncKeyRef.current !== syncKey;
+    const params: ComputeVariableRangeParams = {
+      heightsLength: heights.length,
+      prefixSums,
+      totalH,
+      averageHeight,
+      scrollTop: resetViewport ? 0 : latestScrollTopRef.current,
+      viewH,
+      overscanMin,
+      overscanFactor,
+    };
+    // New layouts and filtered row sets need a valid window in this render,
+    // before effects synchronize the measured viewport and stored range.
+    return resetViewport || !doesVariableVirtualRangeCoverViewport(rangeState, params)
+      ? computeVariableRange(params)
+      : rangeState;
+  }, [averageHeight, heights.length, overscanFactor, overscanMin, prefixSums, rangeState, syncKey, totalH, viewH]);
 
   const scrollToIndex = useCallback((idx: number, align: 'start' | 'center' = 'start', behavior: 'auto' | 'smooth' | 'smart' = 'smart') => {
     const el = scrollRef.current;

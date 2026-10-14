@@ -16,6 +16,7 @@ import {
   buildHorizontalVirtualColumnsLayout,
   computeHorizontalWindow,
   createFullHorizontalWindow,
+  doesHorizontalWindowCoverViewport,
   overlayFrozenHorizontalColumnLayout,
   preparePositionedMergedColumnRanges,
   resolveStableHorizontalColumnEntries,
@@ -152,6 +153,39 @@ test('computeHorizontalWindow expands the virtual range to fully cover merged co
 
   assert.ok(window.startIndex <= 4);
   assert.ok(window.endIndex >= 7);
+});
+
+test('virtual ranges reject empty initial windows and stale windows after filtering', () => {
+  const oldFixedWindow = computeVirtualWindow(10_000, 24, 600, 24_000, 12, 1.5);
+  assert.equal(doesVirtualWindowCoverViewport(oldFixedWindow, 3, 24, 600, 24_000), false);
+  const nextFixedWindow = computeVirtualWindow(3, 24, 600, 24_000, 12, 1.5);
+  assert.deepEqual([nextFixedWindow.startIdx, nextFixedWindow.endIdx, nextFixedWindow.totalH], [0, 3, 72]);
+  assert.equal(doesVirtualWindowCoverViewport(nextFixedWindow, 3, 24, 600, 24_000), true);
+  const prefixSums = [0, 24, 48, 96];
+  const params = { heightsLength: 3, prefixSums, totalH: 96, averageHeight: 32,
+    scrollTop: 24_000, viewH: 600, overscanMin: 12, overscanFactor: 1.5 };
+  const initial = { startIdx: 0, endIdx: 0, offsetTop: 0, overscan: 12 };
+  const oldDeepWindow = { startIdx: 900, endIdx: 980, offsetTop: 21_600, overscan: 38 };
+  assert.equal(doesVariableVirtualRangeCoverViewport(initial, params), false);
+  assert.equal(doesVariableVirtualRangeCoverViewport(oldDeepWindow, params), false);
+  const next = computeVariableRange(params);
+  assert.deepEqual([next.startIdx, next.endIdx, next.offsetTop], [0, 3, 0]);
+  assert.equal(doesVariableVirtualRangeCoverViewport(next, params), true);
+  assert.equal(doesVariableVirtualRangeCoverViewport(initial, {
+    heightsLength: 0, prefixSums: [0], totalH: 0, scrollTop: 0, viewH: 600,
+  }), true);
+});
+
+test('column windows cover current geometry before first paint and after column changes', () => {
+  const empty = { startIndex: 0, endIndex: 0, visibleColumnCount: 0, overscan: 12 };
+  const short = { startIndex: 0, endIndex: 1, visibleColumnCount: 1, overscan: 12 };
+  const prefix = [0, 100, 280, 420];
+  assert.equal(doesHorizontalWindowCoverViewport(prefix, empty, 0, 600, 100), false);
+  assert.equal(doesHorizontalWindowCoverViewport(prefix, short, 0, 600, 100), false);
+  const full = createFullHorizontalWindow(3);
+  assert.equal(doesHorizontalWindowCoverViewport(prefix, full, 24_000, 600, 100), true);
+  assert.equal(doesHorizontalWindowCoverViewport([0, 100], full, 0, 600, 100), false);
+  assert.equal(doesHorizontalWindowCoverViewport([0], empty, 0, 600, 100), true);
 });
 
 test('computeHorizontalWindow uses prefix sums for variable column widths', () => {

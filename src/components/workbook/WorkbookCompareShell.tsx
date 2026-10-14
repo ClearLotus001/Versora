@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
+import { useWorkbookViewTransition } from '@/hooks/workbook/useWorkbookViewTransition';
 
 interface WorkbookCompareShellProps {
+  presentationKey: string;
   perfPanel?: ReactNode;
   mergeNotice?: ReactNode;
   frozenOverflowBar?: ReactNode;
@@ -13,6 +15,7 @@ interface WorkbookCompareShellProps {
 }
 
 export default function WorkbookCompareShell({
+  presentationKey,
   perfPanel,
   mergeNotice,
   frozenOverflowBar,
@@ -23,12 +26,17 @@ export default function WorkbookCompareShell({
   hoverTooltip,
   sheetTabs,
 }: WorkbookCompareShellProps) {
+  const tableSurfaceRef = useWorkbookViewTransition(presentationKey);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-w-0 min-h-0 bg-workbook-canvas-bg">
       {perfPanel}
       {mergeNotice}
       {frozenOverflowBar}
-      <div className="flex-1 flex overflow-hidden min-w-0 min-h-0">
+      <div
+        ref={tableSurfaceRef}
+        data-testid="workbook-table-surface"
+        className="flex-1 flex overflow-hidden min-w-0 min-h-0">
         <div className="relative flex-1 flex flex-col min-w-0 min-h-0">
           {mainContent}
           {fastScrollLayer}

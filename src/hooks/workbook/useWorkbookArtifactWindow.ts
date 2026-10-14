@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useLayoutEffect, useMemo, useSyncExternalStore } from 'react';
 import type { SplitRow, WorkbookMergeRange } from '@/types';
 import type { WorkbookRowEntryMaps, WorkbookCompareCellsMaps, WorkbookCompareStateByRow } from '@/utils/workbook/workbookPanelHelpers';
 
@@ -46,7 +46,7 @@ export function useWorkbookArtifactWindow({ rows, columns, baseVersion, mineVers
     return { sheetId, selectedColumns, anchors, rows: [...new Set([...rows, ...anchorRows])] };
     // Keys describe the requested coordinates; no cache read is hidden here.
   }, [provider, rowKey, columnKey, baseMerges, mineMerges]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!provider || !requests) return;
     void provider.ensureRows(requests.rows, requests.selectedColumns);
     for (const side of ['base', 'mine'] as const) void provider.ensureCells(requests.sheetId, side, requests.anchors[side]);

@@ -27,6 +27,7 @@
   "toolbarDiffOnlyQuickLabel": "仅差异",
   "toolbarDiffOnlyQuickTitle": "隐藏未变化行，仅显示差异项",
   "diffFilterLabel": "差异类型",
+  "diffFilterType": "类型",
   "diffFilterAll": "全部",
   "diffFilterAdded": "新增",
   "diffFilterModified": "修改",

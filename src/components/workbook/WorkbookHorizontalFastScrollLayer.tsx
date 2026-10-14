@@ -192,6 +192,7 @@ export default function WorkbookHorizontalFastScrollLayer({
 
   return (
     <div
+      className="workbook-fast-scroll-layer"
       aria-hidden="true"
       style={{
         position: 'absolute',
@@ -201,7 +202,6 @@ export default function WorkbookHorizontalFastScrollLayer({
         zIndex: 30,
         pointerEvents: 'none',
         opacity: scrollState.settling ? 0 : 1,
-        transition: 'opacity 90ms ease-out',
         willChange: 'opacity',
       }}>
       {renderPane('left')}

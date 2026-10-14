@@ -313,7 +313,7 @@ const ToolbarViewMenu = memo(({
           onClick={() => setOpen((v) => !v)}
           className={`
             h-8 rounded-[10px] border border-border-default
-            bg-bg-surface-hover font-ui text-[13px] font-bold
+            bg-bg-surface-hover font-ui text-[13px] font-semibold
             inline-flex items-center gap-2 cursor-pointer whitespace-nowrap
             transition-all duration-150
             hover:-translate-y-px hover:border-border-strong hover:shadow-sm

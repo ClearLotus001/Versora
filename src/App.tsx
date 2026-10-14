@@ -71,7 +71,6 @@ import SearchBar from '@/components/diff/SearchBar';
 import WorkbookFormulaBar from '@/components/workbook/WorkbookFormulaBar';
 import WorkbookArtifactNoticeBar from '@/components/workbook/WorkbookArtifactNoticeBar';
 import Toolbar from '@/components/navigation/Toolbar';
-import DiffFilterToolbar from '@/components/navigation/DiffFilterToolbar';
 import SplitHeader from '@/components/navigation/SplitHeader';
 import StatsBar from '@/components/navigation/StatsBar';
 import { copyText } from '@/utils/app/clipboard';
@@ -866,6 +865,10 @@ export default function App() {
             showSearch={showSearch}     setShowSearch={setShowSearch}
             collapseCtx={collapseCtx}   setCollapseCtx={setCollapseCtx}
             showOnlyDifferences={showOnlyDifferences} setShowOnlyDifferences={setShowOnlyDifferences}
+            showDiffTypeFilter={hasLoadedDiff && !isLoadingDiff}
+            diffTypeFilter={diffTypeFilter}
+            diffTypeAvailability={diffTypeAvailability}
+            onDiffTypeFilterChange={setDiffTypeFilter}
             showWhitespace={showWhitespace} setShowWhitespace={setShowWhitespace}
             showHiddenColumns={showHiddenColumns} setShowHiddenColumns={setShowHiddenColumns}
             botEnabled={botEnabled} setBotEnabled={setBotEnabled}
@@ -896,14 +899,6 @@ export default function App() {
               onSelect={sessions.selectComparison}
               onClose={sessions.closeComparison}
               onNew={handleReturnHome}
-            />
-          )}
-
-          {hasLoadedDiff && !isLoadingDiff && (
-            <DiffFilterToolbar
-              value={diffTypeFilter}
-              availability={diffTypeAvailability}
-              onChange={setDiffTypeFilter}
             />
           )}
 

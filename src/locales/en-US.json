@@ -27,6 +27,7 @@
   "toolbarDiffOnlyQuickLabel": "Diff only",
   "toolbarDiffOnlyQuickTitle": "Hide unchanged rows and show differences only",
   "diffFilterLabel": "DIFF TYPE",
+  "diffFilterType": "Type",
   "diffFilterAll": "All",
   "diffFilterAdded": "Added",
   "diffFilterModified": "Modified",

@@ -232,7 +232,7 @@ export function useVirtual(
   }, [overscanFactor, overscanMin, rowHeight]);
 
   // ResizeObserver — stable ref, runs once
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
@@ -244,8 +244,9 @@ export function useVirtual(
     ro.observe(el);
     const nextViewH = Math.max(0, el.clientHeight);
     viewHRef.current = nextViewH;
+    latestScrollTopRef.current = Math.max(0, Math.round(el.scrollTop));
     setViewH(prev => (prev === nextViewH ? prev : nextViewH));
-    applyWindowRange(Math.max(0, Math.round(el.scrollTop)), nextViewH);
+    applyWindowRange(latestScrollTopRef.current, nextViewH);
     return () => ro.disconnect();
   }, [applyWindowRange, rowHeight, scrollRef]);
 
@@ -285,12 +286,12 @@ export function useVirtual(
     };
   }, [applyWindowRange, rowHeight, scrollRef]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyWindowRange(latestScrollTopRef.current, viewHRef.current);
   }, [applyWindowRange]);
 
   // When count changes, recompute window range without recreating scroll listeners
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyWindowRange(latestScrollTopRef.current, viewHRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count]);
@@ -320,18 +321,20 @@ export function useVirtual(
     setWindowRange(nextRange);
   }, [count, getScrollFollowers, overscanFactor, overscanMin, rowHeight, scrollRef, syncKey]);
 
-  const effectiveWindowRange = useMemo(() => (
-    syncKeyRef.current !== syncKey
+  const effectiveWindowRange = useMemo(() => {
+    const resetViewport = syncKeyRef.current !== syncKey;
+    const scrollTop = resetViewport ? 0 : latestScrollTopRef.current;
+    return resetViewport || !doesVirtualWindowCoverViewport(windowRange, count, rowHeight, viewH, scrollTop)
       ? computeVirtualWindow(
         count,
         rowHeight,
-        viewHRef.current,
-        0,
+        viewH,
+        scrollTop,
         overscanMin,
         overscanFactor,
       )
-      : windowRange
-  ), [count, overscanFactor, overscanMin, rowHeight, syncKey, windowRange]);
+      : windowRange;
+  }, [count, overscanFactor, overscanMin, rowHeight, syncKey, viewH, windowRange]);
   const totalH = effectiveWindowRange.totalH;
 
   const scrollToIndex = useCallback(

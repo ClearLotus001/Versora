@@ -5,8 +5,10 @@ import type {
   RefObject,
 } from 'react';
 import { useI18n } from '@/context/i18n';
+import { useWorkbookViewTransition } from '@/hooks/workbook/useWorkbookViewTransition';
 
 interface WorkbookHorizontalShellProps {
+  presentationKey: string;
   paneContainerRef: RefObject<HTMLDivElement | null>;
   paneGridTemplateColumns: string;
   splitRatio: number;
@@ -28,6 +30,7 @@ interface WorkbookHorizontalShellProps {
 }
 
 export default function WorkbookHorizontalShell({
+  presentationKey,
   paneContainerRef,
   paneGridTemplateColumns,
   splitRatio,
@@ -48,12 +51,16 @@ export default function WorkbookHorizontalShell({
   sheetTabs,
 }: WorkbookHorizontalShellProps) {
   const { t } = useI18n();
+  const tableSurfaceRef = useWorkbookViewTransition(presentationKey);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-w-0 min-h-0">
       {perfPanel}
       {frozenOverflowBar}
-      <div className="flex-1 flex overflow-hidden min-w-0 min-h-0">
+      <div
+        ref={tableSurfaceRef}
+        data-testid="workbook-table-surface"
+        className="flex-1 flex overflow-hidden min-w-0 min-h-0">
         <div className="relative flex-1 flex flex-col min-w-0 min-h-0">
           <div
             ref={paneContainerRef}

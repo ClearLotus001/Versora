@@ -206,6 +206,7 @@ export default function WorkbookCompareFastScrollViewport({
   return (
     <div
       data-workbook-fast-scroll-viewport={mode}
+      className="workbook-fast-scroll-layer"
       aria-hidden="true"
       style={{
         position: 'absolute',
@@ -217,7 +218,6 @@ export default function WorkbookCompareFastScrollViewport({
         pointerEvents: 'none',
         background: 'var(--workbook-canvas-bg)',
         opacity: viewportState.settling ? 0 : 1,
-        transition: 'opacity 90ms ease-out',
         willChange: 'opacity',
         zIndex: 30,
       }}>

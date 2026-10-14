@@ -1,5 +1,5 @@
-export const VIRTUAL_FAST_SCROLL_ACTIVE_ATTRIBUTE = 'data-virtual-fast-scroll-active';
-export const VIRTUAL_FAST_SCROLL_OWNER_ATTRIBUTE = 'data-virtual-fast-scroll-owner';
+const VIRTUAL_FAST_SCROLL_ACTIVE_ATTRIBUTE = 'data-virtual-fast-scroll-active';
+const VIRTUAL_FAST_SCROLL_OWNER_ATTRIBUTE = 'data-virtual-fast-scroll-owner';
 export const VIRTUAL_FAST_SCROLL_START_EVENT = 'versora:virtual-fast-scroll-start';
 export const VIRTUAL_FAST_SCROLL_END_EVENT = 'versora:virtual-fast-scroll-end';
 

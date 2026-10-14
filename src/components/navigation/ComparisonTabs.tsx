@@ -73,16 +73,8 @@ const ComparisonTabs = memo(({
             <div
               key={tab.id}
               role="presentation"
-              className="group flex shrink-0 items-center rounded-lg border transition-colors"
-              style={{
-                background: active
-                  ? 'color-mix(in srgb, var(--accent) 12%, var(--bg-surface-solid) 88%)'
-                  : 'transparent',
-                borderColor: active
-                  ? 'color-mix(in srgb, var(--accent) 40%, var(--border-color) 60%)'
-                  : 'transparent',
-                color: active ? 'var(--accent)' : 'var(--text-primary)',
-              }}
+              data-active={active}
+              className="comparison-tab-surface group flex shrink-0 items-center rounded-lg border"
             >
               <Tooltip content={tab.description ?? tab.title} placement="bottom" disabled={disabled}>
                 <button

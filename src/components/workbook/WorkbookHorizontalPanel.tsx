@@ -1540,6 +1540,13 @@ const WorkbookHorizontalPanel = memo(({
       enabled={visibilityModel.policy.maskIrrelevantCells}
       onRegionEnter={handleMaskedRegionEnter}>
       <WorkbookHorizontalShell
+      presentationKey={JSON.stringify([
+        'split-h',
+        activeWorkbookSection?.name ?? null,
+        visibilityModel.policy.mode,
+        visibilityModel.policy.diffTypeFilter,
+        compareMode,
+      ])}
       paneContainerRef={paneContainerRef}
       paneGridTemplateColumns={paneGridTemplateColumns}
       splitRatio={splitRatio}

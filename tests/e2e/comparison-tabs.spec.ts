@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { DiffData, SvnRevisionInfo } from '../../src/types';
 import type { E2ELoadTextDiffPayload } from '../../src/utils/app/e2eBridge';
 import type { WorkbookArtifactDescriptor, WorkbookArtifactWindowRequest } from '../../shared/workbookArtifactProtocol';
+import { expectDiffTypeFilter, selectDiffTypeFilter } from './helpers/diffTypeFilter';
 
 type ExternalComparisonHarness = {
   enqueue: (data: DiffData, delayMs?: number) => void;
@@ -243,21 +244,22 @@ test('each file retains its content, search, layout, filter and hunk navigation'
   await expect(page.getByTestId('comparison-tab')).toHaveCount(2);
   await page.keyboard.press('Control+f');
   await page.locator('.searchbar-input').fill('BetaNeedle');
-  await page.getByTestId('diff-filter-modify').click();
-  await expect(page.getByTestId('diff-filter-modify')).toHaveAttribute('aria-checked', 'true');
+  await selectDiffTypeFilter(page, 'modify');
+  await expectDiffTypeFilter(page, 'modify');
+  await expect(page.locator('.searchbar-input')).toHaveValue('BetaNeedle');
 
   await selectComparison(page, 'alpha.txt');
   await expect(page.getByTestId('toolbar-layout-split-v')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.searchbar-input')).toHaveValue('AlphaNeedle new');
   await expect(page.locator('#search-pattern-status')).toHaveText('2 / 2');
   await expect(navigation).toContainText('2/2');
-  await expect(page.getByTestId('diff-filter-all')).toHaveAttribute('aria-checked', 'true');
+  await expectDiffTypeFilter(page, 'all');
   await expect(page.locator('[data-line-idx]')).toContainText(['AlphaNeedle']);
 
   await selectComparison(page, 'beta.txt');
   await expect(page.getByTestId('toolbar-layout-unified')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.searchbar-input')).toHaveValue('BetaNeedle');
-  await expect(page.getByTestId('diff-filter-modify')).toHaveAttribute('aria-checked', 'true');
+  await expectDiffTypeFilter(page, 'modify');
   await expect(page.locator('[data-line-idx]')).toContainText(['BetaNeedle']);
   await expect(page.locator('#search-pattern-status')).toHaveText(/^[1-9]\d* \/ [1-9]\d*$/);
   await selectComparison(page, 'alpha.txt');

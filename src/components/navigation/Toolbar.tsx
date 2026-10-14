@@ -1,5 +1,5 @@
 // src/components/Toolbar.tsx
-import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   AlignJustify,
   Columns2,
@@ -25,10 +25,12 @@ import {
   ListFilter,
 } from 'lucide-react';
 import { useI18n } from '@/context/i18n';
-import type { AppUpdateState, ThemeKey, LayoutMode, WorkbookCompareMode } from '@/types';
+import type { AppUpdateState, ThemeKey, LayoutMode, WorkbookCompareMode, DiffTypeFilter } from '@/types';
+import type { DiffTypeAvailability } from '@/utils/diff/diffTypeFilter';
 import { THEME_KEYS } from '@/theme';
 import Tooltip from '@/components/shared/Tooltip';
 import ToolbarViewMenu from '@/components/navigation/ToolbarViewMenu';
+import DiffTypeFilterControl from '@/components/navigation/DiffTypeFilterControl';
 import appIconUrl from '../../../assets/icon.png';
 
 type IconName =
@@ -122,6 +124,10 @@ interface ToolbarProps {
   setCollapseCtx: React.Dispatch<React.SetStateAction<boolean>>;
   showOnlyDifferences: boolean;
   setShowOnlyDifferences: React.Dispatch<React.SetStateAction<boolean>>;
+  diffTypeFilter: DiffTypeFilter;
+  diffTypeAvailability: DiffTypeAvailability;
+  onDiffTypeFilterChange: (value: DiffTypeFilter) => void;
+  showDiffTypeFilter: boolean;
   showWhitespace: boolean;
   setShowWhitespace: React.Dispatch<React.SetStateAction<boolean>>;
   showHiddenColumns: boolean;
@@ -156,6 +162,7 @@ const Toolbar = memo((props: ToolbarProps) => {
     hunkIdx, totalHunks, hunkTargetLabel = '', showHunkNavigation = true, onPrev, onNext,
     showSearch, setShowSearch, collapseCtx, setCollapseCtx,
     showOnlyDifferences, setShowOnlyDifferences,
+    diffTypeFilter, diffTypeAvailability, onDiffTypeFilterChange, showDiffTypeFilter,
     showWhitespace, setShowWhitespace, showHiddenColumns, setShowHiddenColumns,
     botEnabled, setBotEnabled,
     workbookCompareMode, setWorkbookCompareMode,
@@ -171,9 +178,12 @@ const Toolbar = memo((props: ToolbarProps) => {
   const noDragStyle = (isElectron ? { WebkitAppRegion: 'no-drag' as const } : undefined) as CSSProperties | undefined;
   const noDragAnchorStyle = noDragStyle;
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const leftRef = useRef<HTMLDivElement | null>(null);
+  const filterSlotRef = useRef<HTMLDivElement | null>(null);
   const themeMenuRef = useRef<HTMLDivElement | null>(null);
   const [toolbarWidth, setToolbarWidth] = useState(1600);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+  const [filterAvailableWidth, setFilterAvailableWidth] = useState(0);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -240,6 +250,23 @@ const Toolbar = memo((props: ToolbarProps) => {
     }
   }, [isElectron, onCheckForUpdates, onDownloadUpdate, onInstallUpdate, t, updateState]);
 
+  useLayoutEffect(() => {
+    const left = leftRef.current;
+    const slot = filterSlotRef.current;
+    if (!left || !slot) return;
+    const measure = () => {
+      const children = Array.from(left.children);
+      const otherWidth = children.reduce((width, child) => child === slot ? width : width + child.getBoundingClientRect().width, 0);
+      const gap = Number.parseFloat(window.getComputedStyle(left).columnGap) || 0;
+      setFilterAvailableWidth(Math.max(0, Math.floor(left.getBoundingClientRect().width - otherWidth - gap * Math.max(0, children.length - 1) - 2)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(left);
+    for (const child of left.children) observer.observe(child);
+    return () => observer.disconnect();
+  });
+
   const Btn = ({
     active = false, pressed, onClick, children, tooltip = '', compact = false, disabled = false, testId, standalone = false,
   }: {
@@ -259,13 +286,13 @@ const Toolbar = memo((props: ToolbarProps) => {
           app-toolbar__button
           ${standalone ? 'app-toolbar__control-surface' : ''}
           inline-flex items-center justify-center gap-1.5
-          h-8 text-[13px] font-ui
-          ${standalone ? 'rounded-[10px] font-bold' : 'rounded-lg font-semibold'}
+          h-8 text-[13px] font-ui font-semibold
+          ${standalone ? 'rounded-[10px]' : 'rounded-lg'}
           whitespace-nowrap leading-none
           transition-all duration-150
-          ${compact
-            ? (standalone ? 'px-2 min-w-8' : (responsiveMode === 'tight' ? 'px-1.5 min-w-7' : 'px-2 min-w-7'))
-            : (responsiveMode === 'tight' ? 'px-2' : 'px-2.5')
+          ${responsiveMode === 'tight' ? 'px-1.5 min-w-7' : compact
+            ? (standalone ? 'px-2 min-w-8' : 'px-2 min-w-7')
+            : 'px-2.5'
           }
           ${active
             ? 'bg-[var(--accent)]/[0.13] border border-[var(--accent)]/40 text-accent'
@@ -294,8 +321,8 @@ const Toolbar = memo((props: ToolbarProps) => {
       className={`
         flex items-center shrink-0
         ${plain
-          ? 'gap-1.5'
-          : `app-toolbar__group rounded-xl bg-bg-surface-hover border border-border-default ${responsiveMode === 'tight' ? 'gap-0.5 p-px' : 'gap-0.5 p-0.5'}`}
+          ? (responsiveMode === 'tight' ? 'gap-1' : 'gap-1.5')
+          : `app-toolbar__group rounded-xl bg-bg-surface-hover border border-border-default ${responsiveMode === 'tight' ? 'gap-0.5 p-0' : 'gap-0.5 p-0.5'}`}
       `}
       style={noDragStyle}>
       {children}
@@ -314,13 +341,13 @@ const Toolbar = memo((props: ToolbarProps) => {
             app-toolbar__theme-button app-toolbar__control-surface
             h-8 rounded-[10px] border border-border-default
             bg-bg-surface-hover text-text-title
-            font-ui text-[13px] font-bold
+            font-ui text-[13px] font-semibold
             inline-flex items-center gap-2 cursor-pointer whitespace-nowrap
             transition-all duration-150
             hover:-translate-y-px hover:border-border-strong hover:shadow-sm
           "
           style={{
-            padding: showThemeLabel ? '0 10px 0 12px' : '0 10px',
+            padding: showThemeLabel ? '0 10px 0 12px' : (responsiveMode === 'tight' ? '0 6px' : '0 10px'),
             ...noDragStyle,
           }}>
           <ThemeSwatch theme={themeKey} />
@@ -385,7 +412,7 @@ const Toolbar = memo((props: ToolbarProps) => {
         ...(isElectron ? { WebkitAppRegion: 'drag' as const } : {}),
       }}>
       {/* ── Left Section ── */}
-      <div className="flex items-center content-center flex-nowrap gap-1.5 min-w-0 flex-1 overflow-hidden">
+      <div ref={leftRef} className={`flex items-center content-center flex-nowrap ${responsiveMode === 'tight' ? 'gap-1' : 'gap-1.5'} min-w-0 flex-1 overflow-hidden`}>
         {isHome && (
           <div className="app-toolbar__brand" data-testid="toolbar-home-brand">
             <img src={appIconUrl} alt="" draggable={false} />
@@ -498,6 +525,19 @@ const Toolbar = memo((props: ToolbarProps) => {
           </Group>
         )}
 
+        {showDiffControls && showDiffTypeFilter && (
+          <div ref={filterSlotRef} className="shrink-0">
+            <DiffTypeFilterControl
+              value={diffTypeFilter}
+              availability={diffTypeAvailability}
+              onChange={onDiffTypeFilterChange}
+              availableWidth={filterAvailableWidth}
+              density={responsiveMode === 'tight' ? 'tight' : 'regular'}
+              noDragStyle={noDragStyle}
+            />
+          </div>
+        )}
+
         {showDiffControls && (
           <ToolbarViewMenu
             collapseCtx={collapseCtx}
@@ -523,7 +563,7 @@ const Toolbar = memo((props: ToolbarProps) => {
       </div>
 
       {/* ── Right Section ── */}
-      <div className="flex items-center justify-end content-center flex-nowrap gap-1.5 flex-none ml-2" style={noDragStyle}>
+      <div className={`flex items-center justify-end content-center flex-nowrap ${responsiveMode === 'tight' ? 'gap-1 ml-1' : 'gap-1.5 ml-2'} flex-none`} style={noDragStyle}>
         {updateAction && (
           <Btn standalone active={updateAction.active} onClick={updateAction.onClick} tooltip={updateState?.errorMessage || updateAction.label} disabled={updateAction.disabled}>
             <Icon name={updateAction.icon} />

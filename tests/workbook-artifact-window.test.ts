@@ -8,7 +8,7 @@ import { WorkbookArtifactProvider } from '../src/utils/workbook/workbookArtifact
 test('a one-sided off-screen merged anchor loads both comparison values and retains its change delta', async (context) => {
   // Execute the real demand effect and window projection; React scheduling is irrelevant to this IO contract.
   context.mock.method(React, 'useMemo', (compute: () => unknown) => compute());
-  context.mock.method(React, 'useEffect', (effect: () => unknown) => { effect(); });
+  context.mock.method(React, 'useLayoutEffect', (effect: () => unknown) => { effect(); });
   context.mock.method(React, 'useSyncExternalStore', (_subscribe: unknown, snapshot: () => number) => snapshot());
   const content = (anchor: string) => ['@@sheet\tSheet', ...Array.from({ length: 300 }, (_, index) => `@@row\t${index + 1}\t${index === 19 ? anchor : `row-${index + 1}`}`)].join('\n');
   const descriptor = createWorkbookArtifactFixture(content('old anchor'), content('new anchor'));

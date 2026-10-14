@@ -75,6 +75,54 @@ test('budget pages reassemble the requested window exactly and distinguish loadi
   assert.equal(provider.getCacheStats().pending, 0);
 });
 
+test('a completed read batch publishes before paint and cancels its partial-frame notification', async (context) => {
+  const frames = new Map<number, FrameRequestCallback>();
+  const previousRaf = Object.getOwnPropertyDescriptor(globalThis, 'requestAnimationFrame');
+  const previousCancel = Object.getOwnPropertyDescriptor(globalThis, 'cancelAnimationFrame');
+  let nextFrame = 0;
+  Object.assign(globalThis, {
+    requestAnimationFrame: (callback: FrameRequestCallback) => { frames.set(nextFrame, callback); return nextFrame++; },
+    cancelAnimationFrame: (id: number) => { frames.delete(id); },
+  });
+  context.after(() => {
+    if (previousRaf) Object.defineProperty(globalThis, 'requestAnimationFrame', previousRaf);
+    else Reflect.deleteProperty(globalThis, 'requestAnimationFrame');
+    if (previousCancel) Object.defineProperty(globalThis, 'cancelAnimationFrame', previousCancel);
+    else Reflect.deleteProperty(globalThis, 'cancelAnimationFrame');
+  });
+  const completions: Array<() => void> = [];
+  setBridge({ readWorkbookArtifactWindow: (request) => new Promise((resolve) => {
+    completions.push(() => resolve(page(request)));
+  }) });
+  const data = descriptor();
+  data.sheets[0]!.maxColumnCount = 64;
+  const provider = new WorkbookArtifactProvider(data);
+  const revisions: number[] = [];
+  provider.subscribe(() => { revisions.push(provider.getSnapshot()); });
+  const demand = provider.ensureRows(provider.getRows('Sheet')!, [0, 16]);
+  assert.equal(completions.length, 2);
+  completions[0]!();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(provider.getCacheStats().pending, 1);
+  assert.equal(frames.size, 1);
+  assert.deepEqual(revisions, []);
+  completions[1]!();
+  await demand;
+  assert.equal(provider.getCacheStats().pending, 0);
+  assert.equal(frames.size, 0);
+  assert.deepEqual(revisions, [1]);
+
+  const closedDemand = provider.ensureRows(provider.getRows('Sheet')!, [32, 48]);
+  completions[2]!();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(frames.size, 1);
+  provider.dispose();
+  assert.equal(frames.size, 0);
+  completions[3]!();
+  await closedDemand;
+  assert.deepEqual(revisions, [1]);
+});
+
 test('cell deltas retain native merge-aware flags even when raw window values are equal', async () => {
   setBridge({ readWorkbookArtifactWindow: async (request) => page(request) });
   const provider = new WorkbookArtifactProvider(descriptor());

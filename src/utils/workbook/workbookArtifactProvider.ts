@@ -119,6 +119,7 @@ export class WorkbookArtifactProvider {
   private listeners = new Set<() => void>();
   private revision = 0;
   private notificationQueued = false;
+  private notificationFrameId: number | null = null;
   private disposed = false;
   private readonly lifetime = new AbortController();
   readonly closedSignal = this.lifetime.signal;
@@ -201,21 +202,36 @@ export class WorkbookArtifactProvider {
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   getSnapshot = () => this.revision;
+  private notify = () => {
+    this.notificationQueued = false;
+    this.notificationFrameId = null;
+    if (this.disposed) return;
+    this.revision += 1;
+    this.listeners.forEach((listener) => listener());
+  };
   private emit() {
-    if (this.notificationQueued || this.disposed) return;
+    if (this.disposed) return;
+    const batchComplete = this.pending.size === 0 && this.cellPending.size === 0;
+    if (this.notificationQueued) {
+      if (batchComplete && this.notificationFrameId !== null) {
+        cancelAnimationFrame(this.notificationFrameId);
+        this.notificationFrameId = null;
+        queueMicrotask(this.notify);
+      }
+      return;
+    }
     this.notificationQueued = true;
-    const notify = () => {
-      this.notificationQueued = false;
-      if (this.disposed) return;
-      this.revision += 1;
-      this.listeners.forEach((listener) => listener());
-    };
-    // A tile completion paints at most once per frame, even if several IPC replies arrive together.
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(notify);
-    else queueMicrotask(notify);
+    // Coalesce partial tile replies per frame. The completed batch is ready
+    // before the next paint, without another frame showing unhydrated cells.
+    if (!batchComplete && typeof requestAnimationFrame === 'function') {
+      this.notificationFrameId = requestAnimationFrame(this.notify);
+    } else queueMicrotask(this.notify);
   }
   dispose() {
     this.disposed = true;
+    if (this.notificationFrameId !== null) cancelAnimationFrame(this.notificationFrameId);
+    this.notificationFrameId = null;
+    this.notificationQueued = false;
     this.lifetime.abort();
     this.cancelColumnMeasurement();
     this.measuredColumnWidths.clear();

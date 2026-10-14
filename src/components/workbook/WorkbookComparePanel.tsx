@@ -1563,6 +1563,13 @@ const WorkbookComparePanel = memo(({
       enabled={visibilityModel.policy.maskIrrelevantCells}
       onRegionEnter={handleMaskedRegionEnter}>
       <WorkbookCompareShell
+      presentationKey={JSON.stringify([
+        mode,
+        activeWorkbookSection?.name ?? null,
+        visibilityModel.policy.mode,
+        visibilityModel.policy.diffTypeFilter,
+        compareMode,
+      ])}
       perfPanel={showPerfDebug ? <WorkbookPerfDebugPanel stats={perfStats} /> : null}
       mergeNotice={stackedVisibleMergeGroupCount > 0 ? (
         <div

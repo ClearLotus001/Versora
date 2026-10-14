@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { PerfBridge } from '../../src/utils/app/perfBridge';
+import { expectDiffTypeFilter, openDiffTypeFilterOptions, selectDiffTypeFilter } from './helpers/diffTypeFilter';
 
 test.beforeEach(async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -53,23 +54,24 @@ test('diff type toolbar composes with the differences-only scope', async ({ page
 
   const tabs = page.getByTestId('workbook-sheet-tab');
   await expect(tabs).toHaveCount(4);
-  await expect(page.getByTestId('diff-filter-toolbar')).not.toContainText('DIFF TYPE');
+  await expect(page.getByTestId('diff-filter-toolbar')).toHaveCount(0);
+  await expect(page.locator('.app-toolbar').getByTestId('diff-type-filter')).toBeVisible();
   await expect(page.getByTestId('diff-filter-scope')).toHaveCount(0);
 
-  await page.getByTestId('diff-filter-add').click();
-  await expect(page.getByTestId('diff-filter-add')).toHaveAttribute('aria-checked', 'true');
+  await selectDiffTypeFilter(page, 'add');
+  await expectDiffTypeFilter(page, 'add');
   await expect(tabs).toHaveCount(1);
   await expect(tabs).toContainText('Added');
 
-  await page.getByTestId('diff-filter-modify').click();
+  await selectDiffTypeFilter(page, 'modify');
   await expect(tabs).toHaveCount(1);
   await expect(tabs).toContainText('Modified');
 
-  await page.getByTestId('diff-filter-delete').click();
+  await selectDiffTypeFilter(page, 'delete');
   await expect(tabs).toHaveCount(1);
   await expect(tabs).toContainText('Deleted');
 
-  await page.getByTestId('diff-filter-all').click();
+  await selectDiffTypeFilter(page, 'all');
   await expect(tabs).toHaveCount(4);
 
   await page.getByTestId('toolbar-diff-only').click();
@@ -115,17 +117,17 @@ test('workbook type filters remove non-matching rows from the rendered canvas', 
   await expect(bodyCanvases.first()).toBeVisible();
   const fullHeight = await renderedHeight();
 
-  await page.getByTestId('diff-filter-modify').click();
+  await selectDiffTypeFilter(page, 'modify');
   await expect.poll(renderedHeight).toBeLessThan(fullHeight);
   const modifiedHeight = await renderedHeight();
 
-  await page.getByTestId('diff-filter-add').click();
+  await selectDiffTypeFilter(page, 'add');
   await expect.poll(renderedHeight).toBe(modifiedHeight);
 
-  await page.getByTestId('diff-filter-delete').click();
+  await selectDiffTypeFilter(page, 'delete');
   await expect.poll(renderedHeight).toBe(modifiedHeight);
 
-  await page.getByTestId('diff-filter-all').click();
+  await selectDiffTypeFilter(page, 'all');
   await expect.poll(renderedHeight).toBe(fullHeight);
 });
 
@@ -140,13 +142,14 @@ test('diff type buttons are disabled when their source type has no differences',
   });
   await page.waitForFunction(() => window.__SVN_DIFF_E2E__?.getSnapshot().fileName === 'added-only.txt');
 
+  await openDiffTypeFilterOptions(page);
   await expect(page.getByTestId('diff-filter-all')).toBeEnabled();
   await expect(page.getByTestId('diff-filter-add')).toBeEnabled();
   await expect(page.getByTestId('diff-filter-modify')).toBeDisabled();
   await expect(page.getByTestId('diff-filter-delete')).toBeDisabled();
 
-  await page.getByTestId('diff-filter-add').click();
-  await expect(page.getByTestId('diff-filter-add')).toHaveAttribute('aria-checked', 'true');
+  await selectDiffTypeFilter(page, 'add');
+  await expectDiffTypeFilter(page, 'add');
 
   await page.evaluate(async () => {
     await window.__SVN_DIFF_E2E__!.loadWorkbookDiff({
@@ -166,10 +169,12 @@ test('diff type buttons are disabled when their source type has no differences',
   });
   await page.waitForFunction(() => window.__SVN_DIFF_E2E__?.getSnapshot().fileName === 'modified-only.xlsx');
 
+  await openDiffTypeFilterOptions(page);
   await expect(page.getByTestId('diff-filter-all')).toHaveAttribute('aria-checked', 'true');
   await expect(page.getByTestId('diff-filter-add')).toBeDisabled();
   await expect(page.getByTestId('diff-filter-modify')).toBeEnabled();
   await expect(page.getByTestId('diff-filter-delete')).toBeDisabled();
+  await page.keyboard.press('Escape');
 });
 
 test('swap button exchanges the complete left and right comparison sides', { tag: '@browser' }, async ({ page }) => {

@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import { LN_W } from '../../src/constants/layout';
 import { ROW_H } from '../../src/hooks/virtualization/useVirtual';
 import { WORKBOOK_CELL_WIDTH } from '../../src/utils/workbook/workbookDisplay';
+import { expectDiffTypeFilter } from './helpers/diffTypeFilter';
 
 test('workbook display menu can persist the differences-only view', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -57,7 +58,7 @@ test('workbook display menu can persist the differences-only view', async ({ pag
   ))).toBe(true);
 
   await page.keyboard.press('Escape');
-  await expect(page.getByTestId('diff-filter-all')).toHaveAttribute('aria-checked', 'true');
+  await expectDiffTypeFilter(page, 'all');
   const quickToggle = page.getByTestId('toolbar-diff-only');
   await expect(quickToggle).toHaveAttribute('aria-pressed', 'true');
   await quickToggle.click();
