@@ -140,6 +140,8 @@ npm 12 需要先批准依赖的安装脚本；本项目已在 `package.json` 中
 | `npm run build:app` | 构建渲染进程和 Electron 主进程 |
 | `npm run build:win` | 构建 Windows 安装包与更新资产 |
 
+完整浏览器回归按需运行：可以执行 `npm run test:e2e`，或在 GitHub Actions 的 [Browser E2E 工作流](./.github/workflows/browser-e2e.yml)中手动触发。推送和 PR 的自动 CI 继续运行静态检查、工作簿单元测试、Rust 集成测试、性能检查和 Windows 打包检查。
+
 ## 架构
 
 Versora 将“内容来自哪里”与“如何比较和渲染”分离：

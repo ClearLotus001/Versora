@@ -140,6 +140,8 @@ npm 12 requires approval before running dependency install scripts. This project
 | `npm run build:app` | Build the renderer and Electron main process |
 | `npm run build:win` | Build the Windows installer and update assets |
 
+Run the full browser suite on demand with `npm run test:e2e`, or trigger the [Browser E2E workflow](./.github/workflows/browser-e2e.yml) manually in GitHub Actions. Automatic push and PR checks cover static analysis, workbook unit tests, Rust integration tests, performance, and Windows packaging.
+
 ## Architecture
 
 Versora separates content sourcing from comparison and rendering:
