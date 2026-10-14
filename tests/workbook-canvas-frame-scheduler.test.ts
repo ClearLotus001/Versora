@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { subscribeWorkbookCanvasScrollFrame } from '../src/utils/workbook/workbookCanvasFrameScheduler';
+import { subscribeWorkbookCanvasScrollFrame, subscribeWorkbookCanvasScrollRefFrame } from '../src/utils/workbook/workbookCanvasFrameScheduler';
 
 test('workbook canvas subscribers share one scroll listener and one animation frame', () => {
   const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
@@ -69,4 +69,30 @@ test('workbook canvas subscribers share one scroll listener and one animation fr
     if (originalCancelAnimationFrame) globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
     else Reflect.deleteProperty(globalThis, 'cancelAnimationFrame');
   }
+});
+
+test('canvas subscriptions wait for ancestor refs and synchronize their initial offsets', async () => {
+  const received: number[] = [];
+  let addCount = 0;
+  let removeCount = 0;
+  const scroller = { scrollTop: 10, scrollLeft: 50,
+    addEventListener: () => { addCount++; },
+    removeEventListener: () => { removeCount++; },
+  } as unknown as HTMLElement;
+  const scrollRef: { current: HTMLElement | null } = { current: null };
+  const unsubscribe = subscribeWorkbookCanvasScrollRefFrame(scrollRef, frame => received.push(frame.scrollLeft));
+  scrollRef.current = scroller;
+  try {
+    assert.deepEqual([...received], []);
+    await Promise.resolve();
+    assert.deepEqual([...received], [50]);
+    assert.equal(addCount, 1);
+  } finally { unsubscribe(); }
+  assert.equal(removeCount, 1);
+
+  const cancelBeforeCommit = subscribeWorkbookCanvasScrollRefFrame(scrollRef, frame => received.push(frame.scrollLeft));
+  cancelBeforeCommit();
+  await Promise.resolve();
+  assert.deepEqual([...received], [50]);
+  assert.equal(addCount, 1);
 });

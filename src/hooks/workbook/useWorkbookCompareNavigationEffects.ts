@@ -79,6 +79,10 @@ interface UseWorkbookCompareNavigationEffectsParams {
   suppressGuidedNavigationUntilRef: MutableRefObject<number>;
 }
 
+interface UseWorkbookCompareNavigationEffectsResult {
+  markViewportRestored: () => void;
+}
+
 export function useWorkbookCompareNavigationEffects({
   active,
   activeSearchMatch,
@@ -119,9 +123,16 @@ export function useWorkbookCompareNavigationEffects({
   lastAutoCellKeyRef,
   lastForcedRevealHunkIdxRef,
   suppressGuidedNavigationUntilRef,
-}: UseWorkbookCompareNavigationEffectsParams): void {
+}: UseWorkbookCompareNavigationEffectsParams): UseWorkbookCompareNavigationEffectsResult {
   const lastGuidedNavigationKeyRef = useRef('');
   const lastAppliedSearchKeyRef = useRef('');
+  const guidedNavigationKey = activeDiffRegion
+    ? `${guidedPulseNonce}:${activeHunkIdx}:${activeDiffRegion.id}:${navigationLayoutKey}`
+    : '';
+  const markViewportRestored = useCallback(() => {
+    lastGuidedNavigationKeyRef.current = guidedNavigationKey;
+    lastForcedRevealHunkIdxRef.current = activeHunkIdx;
+  }, [activeHunkIdx, guidedNavigationKey, lastForcedRevealHunkIdxRef]);
 
   useEffect(() => {
     if (!activeSearchMatch) {
@@ -212,7 +223,7 @@ export function useWorkbookCompareNavigationEffects({
     if (!activeDiffRegion || !activeWorkbookSection) return;
     if (activeDiffRegion.sheetName !== activeWorkbookSection.name) return;
     if (getNow() < suppressGuidedNavigationUntilRef.current) return;
-    const navigationKey = `${guidedPulseNonce}:${activeHunkIdx}:${activeDiffRegion.id}:${navigationLayoutKey}`;
+    const navigationKey = guidedNavigationKey;
     if (lastGuidedNavigationKeyRef.current === navigationKey) return;
 
     lastForcedRevealHunkIdxRef.current = activeHunkIdx;
@@ -238,6 +249,7 @@ export function useWorkbookCompareNavigationEffects({
     let followUpRafId = 0;
     let settleRafId = 0;
     const rafId = requestAnimationFrame(() => {
+      if (lastGuidedNavigationKeyRef.current === navigationKey) return;
       if (stackedTarget) {
         scrollToStackedTarget(stackedTarget, 'start', 'smooth');
       } else if (targetRowIndex >= 0) {
@@ -248,8 +260,10 @@ export function useWorkbookCompareNavigationEffects({
       }
       focusWorkbookDiffRegion(activeDiffRegion);
       followUpRafId = requestAnimationFrame(() => {
+        if (lastGuidedNavigationKeyRef.current === navigationKey) return;
         focusWorkbookDiffRegion(activeDiffRegion);
         settleRafId = requestAnimationFrame(() => {
+          if (lastGuidedNavigationKeyRef.current === navigationKey) return;
           focusWorkbookDiffRegion(activeDiffRegion);
           lastGuidedNavigationKeyRef.current = navigationKey;
         });
@@ -267,11 +281,10 @@ export function useWorkbookCompareNavigationEffects({
     activeHunkIdx,
     activeWorkbookSection,
     focusWorkbookDiffRegion,
-    guidedPulseNonce,
+    guidedNavigationKey,
     lastForcedRevealHunkIdxRef,
     markProgrammaticScroll,
     mode,
-    navigationLayoutKey,
     navigationTargetCell,
     rowItemIndexBySide,
     scrollToIndex,
@@ -426,4 +439,6 @@ export function useWorkbookCompareNavigationEffects({
     selectedCell,
     selectionFocusIntent,
   ]);
+
+  return { markViewportRestored };
 }

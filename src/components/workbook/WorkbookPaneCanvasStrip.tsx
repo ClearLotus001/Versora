@@ -1,6 +1,6 @@
 import { getWorkbookPendingCellPaint } from '@/utils/workbook/workbookArtifactProvider';
 import { useWorkbookArtifactWindow } from '@/hooks/workbook/useWorkbookArtifactWindow';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHorizontalVirtualColumns';
 import { LN_W } from '@/constants/layout';
 import { FONT_CODE, FONT_UI, getWorkbookFontScale } from '@/constants/typography';
@@ -89,7 +89,7 @@ import useWorkbookCanvasHoverController, { resolveWorkbookCanvasHoverForCanvas }
 import useWorkbookCanvasSelectionInteractions from '@/components/workbook/useWorkbookCanvasSelectionInteractions';
 import { useWorkbookMaskedRegionReveal } from '@/components/workbook/WorkbookMaskedRegionRevealContext';
 import type { WorkbookCompareStateByRow } from '@/utils/workbook/workbookPanelHelpers';
-import { subscribeWorkbookCanvasScrollFrame } from '@/utils/workbook/workbookCanvasFrameScheduler';
+import { subscribeWorkbookCanvasScrollRefFrame } from '@/utils/workbook/workbookCanvasFrameScheduler';
 import {
   buildWorkbookCanvasBitmapCacheKey,
   buildWorkbookCanvasBitmapViewportColumnKey,
@@ -921,12 +921,9 @@ const WorkbookPaneCanvasStrip = memo(({
     return undefined;
   }, [bitmapCacheBaseKey, bitmapCacheEnabled, columnLayoutByColumn, columnPartition, compareCellsByRowNumber, compareMode, contentWidth, dragPreviewActive, freezeColumnCount, getHitColumnFrames, headerRowNumber, height, maskedRegions, mergedRanges, motionByRegion, renderedColumnNumbers, renderColumns, renderRows, renderedRowNumbers, rowEntryByRowNumber, rowLayoutByRowNumber, scrollRef, selectionLookup, sheetName, side, sizes.line, sizes.ui, T, viewportWidth]);
 
-  useEffect(() => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-
-    let lastScrollLeft = scroller.scrollLeft ?? 0;
-    return subscribeWorkbookCanvasScrollFrame(scroller, ({ scrollLeft: nextScrollLeft }) => {
+  useLayoutEffect(() => {
+    let lastScrollLeft = scrollRef.current?.scrollLeft ?? 0;
+    return subscribeWorkbookCanvasScrollRefFrame(scrollRef, ({ scrollLeft: nextScrollLeft }) => {
       if (nextScrollLeft === lastScrollLeft) return;
       lastScrollLeft = nextScrollLeft;
       if (hasActiveHoverRef.current()) clearHoverRef.current();

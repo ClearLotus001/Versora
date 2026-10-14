@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   type MutableRefObject,
   type RefObject,
@@ -11,6 +12,9 @@ import type {
   WorkbookSelectedCell,
 } from '@/types';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
+import {
+  scrollElementForNavigation,
+} from '@/utils/navigation/animatedScroll';
 import {
   buildWorkbookCompareLayoutSnapshot,
   shouldRestoreWorkbookLayoutSnapshot,
@@ -53,6 +57,7 @@ interface UseWorkbookCompareViewportSyncResult {
   isUserScrollPaused: () => boolean;
   isAutoScrollSuppressed: () => boolean;
   isSelectionAutoScrollLocked: (selectionKey: string, target: 'row' | 'cell') => boolean;
+  restoreViewport: () => boolean;
 }
 
 export function useWorkbookCompareViewportSync({
@@ -74,7 +79,6 @@ export function useWorkbookCompareViewportSync({
   const selectionAutoScrollLockRef = useRef<SelectionAutoScrollLock | null>(null);
   const snapshotEmitRafRef = useRef(0);
   const snapshotEmitTimeoutRef = useRef<number | null>(null);
-  const restoreRafRef = useRef(0);
   const lastRestoredSnapshotKeyRef = useRef('');
   const lastViewportSheetNameRef = useRef<string | null>(activeSheetName);
   const userScrollPauseUntilRef = useRef(0);
@@ -99,7 +103,7 @@ export function useWorkbookCompareViewportSync({
   );
 
   const emitLayoutSnapshot = useCallback(() => {
-    if (!active || !onLayoutSnapshotChange) return;
+    if (!active || !isExpandedBlocksContextSettled || !onLayoutSnapshotChange) return;
     const container = scrollRef.current;
     const snapshot = buildWorkbookCompareLayoutSnapshot(
       mode === 'stacked' ? 'unified' : 'split-v',
@@ -117,7 +121,7 @@ export function useWorkbookCompareViewportSync({
       snapshot.scrollLeft,
     ].join(':');
     onLayoutSnapshotChange(snapshot);
-  }, [active, activeRegionId, activeSheetName, expandedBlocks, mode, onLayoutSnapshotChange, scrollRef]);
+  }, [active, activeRegionId, activeSheetName, expandedBlocks, isExpandedBlocksContextSettled, mode, onLayoutSnapshotChange, scrollRef]);
 
   const emitLayoutSnapshotRef = useRef(emitLayoutSnapshot);
   emitLayoutSnapshotRef.current = emitLayoutSnapshot;
@@ -160,11 +164,10 @@ export function useWorkbookCompareViewportSync({
       el.removeEventListener('scroll', onScroll);
       if (snapshotEmitRafRef.current) cancelAnimationFrame(snapshotEmitRafRef.current);
       if (snapshotEmitTimeoutRef.current != null) window.clearTimeout(snapshotEmitTimeoutRef.current);
-      if (restoreRafRef.current) cancelAnimationFrame(restoreRafRef.current);
     };
   }, [scheduleLayoutSnapshot, scrollRef]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previousSheetName = lastViewportSheetNameRef.current;
     lastViewportSheetNameRef.current = activeSheetName;
 
@@ -187,7 +190,7 @@ export function useWorkbookCompareViewportSync({
     userScrollPauseUntilRef.current = Math.max(userScrollPauseUntilRef.current, getNow() + 520);
     markProgrammaticScroll(520);
     onResetViewportState?.();
-    container.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    scrollElementForNavigation(container, { top: 0, left: 0, behavior: 'auto' });
   }, [activeSheetName, markProgrammaticScroll, onResetViewportState, scrollRef]);
 
   useEffect(() => {
@@ -209,16 +212,16 @@ export function useWorkbookCompareViewportSync({
     scheduleLayoutSnapshot();
   }, [activeRegionId, activeSheetName, scheduleLayoutSnapshot]);
 
-  useEffect(() => {
+  const restoreViewport = useCallback(() => {
     const container = scrollRef.current;
-    if (!active || !container) return;
+    if (!active || !container || !isExpandedBlocksContextSettled) return false;
     if (!layoutSnapshot || !shouldRestoreWorkbookLayoutSnapshot(
       layoutSnapshot,
       activeRegionId,
       activeSheetName,
     )) {
       lastRestoredSnapshotKeyRef.current = '';
-      return;
+      return false;
     }
     const snapshot = layoutSnapshot;
 
@@ -229,8 +232,7 @@ export function useWorkbookCompareViewportSync({
       snapshot.scrollTop,
       snapshot.scrollLeft,
     ].join(':');
-    if (lastRestoredSnapshotKeyRef.current === restoreKey) return;
-    lastRestoredSnapshotKeyRef.current = restoreKey;
+    if (lastRestoredSnapshotKeyRef.current === restoreKey) return false;
     if (snapshotEmitTimeoutRef.current != null) {
       window.clearTimeout(snapshotEmitTimeoutRef.current);
       snapshotEmitTimeoutRef.current = null;
@@ -248,30 +250,23 @@ export function useWorkbookCompareViewportSync({
       if (selectedCell.kind !== 'column') lastAutoRowKeyRef.current = selectionKey;
       if (selectedCell.kind !== 'row') lastAutoCellKeyRef.current = selectionKey;
     }
-    const raf1 = requestAnimationFrame(() => {
-      const raf2 = requestAnimationFrame(() => {
-        markProgrammaticScroll(420);
-        container.scrollTop = snapshot.scrollTop;
-        container.scrollLeft = snapshot.scrollLeft;
-      });
-      restoreRafRef.current = raf2;
-    });
-    return () => {
-      cancelAnimationFrame(raf1);
-      if (restoreRafRef.current) cancelAnimationFrame(restoreRafRef.current);
-    };
+    markProgrammaticScroll(420);
+    scrollElementForNavigation(container, { top: snapshot.scrollTop, left: snapshot.scrollLeft, behavior: 'auto' });
+    lastRestoredSnapshotKeyRef.current = restoreKey;
+    return true;
   }, [
     active,
     activeHunkIdx,
     activeRegionId,
     activeSheetName,
+    isExpandedBlocksContextSettled,
     layoutSnapshot,
     markProgrammaticScroll,
     scrollRef,
     selectedCell,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     lastAutoRowKeyRef.current = '';
     lastAutoCellKeyRef.current = '';
     lastForcedRevealHunkIdxRef.current = -1;
@@ -298,5 +293,6 @@ export function useWorkbookCompareViewportSync({
     isUserScrollPaused,
     isAutoScrollSuppressed,
     isSelectionAutoScrollLocked,
+    restoreViewport,
   };
 }

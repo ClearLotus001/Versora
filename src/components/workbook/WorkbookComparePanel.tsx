@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject, startTransition } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject, startTransition } from 'react';
 import { FONT_SIZE, FONT_UI } from '@/constants/typography';
 import type {
     DiffLine,
@@ -472,6 +472,7 @@ const WorkbookComparePanel = memo(({
     startIdx,
     endIdx,
     scrollToIndex,
+    syncViewport: syncRowViewport,
     debug: rowVirtualDebug,
   } = activeVirtual;
   const rowWindowOffsetTop = activeVirtual.offsetTop;
@@ -486,6 +487,7 @@ const WorkbookComparePanel = memo(({
     isUserScrollPaused,
     isAutoScrollSuppressed,
     isSelectionAutoScrollLocked,
+    restoreViewport,
   } = useWorkbookCompareViewportSync({
     active,
     mode,
@@ -698,6 +700,7 @@ const WorkbookComparePanel = memo(({
     disableVirtualizationBelow: WORKBOOK_STABLE_COLUMN_WINDOW_LIMIT,
     syncKey: activeWorkbookSection?.name ?? '',
   });
+  const syncColumnViewport = virtualColumns.syncViewport;
   const focusWorkbookCell = useCallback((
     cell: WorkbookSelectedCell,
     strategy: 'focus' | 'ensure-visible' = 'ensure-visible',
@@ -997,7 +1000,7 @@ const WorkbookComparePanel = memo(({
     stackedItemCount: stackedVirtualItems.length,
     totalHeight: totalH,
   }), [effectiveExpandedBlocks, items.length, mode, stackedVirtualItems.length, totalH]);
-  useWorkbookCompareNavigationEffects({
+  const { markViewportRestored } = useWorkbookCompareNavigationEffects({
     active,
     activeSearchMatch,
     activeSearchTargetCell,
@@ -1038,6 +1041,13 @@ const WorkbookComparePanel = memo(({
     lastForcedRevealHunkIdxRef,
     suppressGuidedNavigationUntilRef,
   });
+  useLayoutEffect(() => {
+    if (!restoreViewport()) return;
+    markViewportRestored();
+    // Restore offsets and their virtual windows before the browser paints.
+    syncRowViewport();
+    syncColumnViewport();
+  }, [markViewportRestored, restoreViewport, syncColumnViewport, syncRowViewport]);
   const {
     bodySegments,
     stackedCanvasRuns,

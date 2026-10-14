@@ -25,6 +25,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, typ
 import { flushSync } from 'react-dom';
 import type { VirtualState } from '@/types';
 import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
+import { subscribeProgrammaticScrollSync } from '@/utils/virtualization/programmaticScrollSync';
 
 /**
  * Row height in pixels. MUST match the `height: ROW_H` in every row component.
@@ -250,6 +251,19 @@ export function useVirtual(
     return () => ro.disconnect();
   }, [applyWindowRange, rowHeight, scrollRef]);
 
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    return subscribeProgrammaticScrollSync(el, 'range', () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
+      latestScrollTopRef.current = Math.max(0, Math.round(el.scrollTop));
+      applyWindowRange(latestScrollTopRef.current, viewHRef.current);
+    });
+  }, [applyWindowRange, scrollRef]);
+
   // Keep up with thumb dragging without pushing React through more than one
   // rerender per frame.
   useEffect(() => {
@@ -282,7 +296,10 @@ export function useVirtual(
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       el.removeEventListener('scroll', onScroll);
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
     };
   }, [applyWindowRange, rowHeight, scrollRef]);
 

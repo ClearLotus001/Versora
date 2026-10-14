@@ -2,6 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { WorkbookMergeRange } from '@/utils/workbook/workbookMeta';
 import { clampWorkbookColumnWidth } from '@/utils/workbook/workbookColumnWidths';
 import { resolveWorkbookFrozenPaneViewport } from '@/utils/workbook/workbookFrozenPane';
+import { subscribeProgrammaticScrollSync } from '@/utils/virtualization/programmaticScrollSync';
+import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
 
 export interface HorizontalVirtualColumnEntry {
   column: number;
@@ -47,6 +49,7 @@ interface HorizontalVirtualColumnsResult {
   leadingSpacerWidth: number;
   trailingSpacerWidth: number;
   columnLayoutByColumn: ReadonlyMap<number, HorizontalVirtualColumnEntry>;
+  syncViewport: () => void;
   debug: {
     viewportWidth: number;
     scrollLeft: number;
@@ -613,6 +616,30 @@ export function useHorizontalVirtualColumns({
     [resolvePaneState, shouldRenderAllColumns],
   );
 
+  const syncViewport = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+    if (resizeRafRef.current) {
+      cancelAnimationFrame(resizeRafRef.current);
+      resizeRafRef.current = 0;
+    }
+    if (frozenRafRef.current) {
+      cancelAnimationFrame(frozenRafRef.current);
+      frozenRafRef.current = 0;
+    }
+    const nextViewportWidth = Math.max(0, Math.round(el.clientWidth));
+    viewportWidthRef.current = nextViewportWidth;
+    scrollLeftRef.current = Math.max(0, Math.round(el.scrollLeft));
+    frozenScrollLeftRef.current = Math.max(0, Math.round(frozenScrollRef?.current?.scrollLeft ?? 0));
+    setViewportWidth(prev => (prev === nextViewportWidth ? prev : nextViewportWidth));
+    setFrozenScrollLeftState(frozenScrollLeftRef.current);
+    applyWindowRange(scrollLeftRef.current, nextViewportWidth);
+  }, [applyWindowRange, frozenScrollRef, scrollRef]);
+
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -643,7 +670,7 @@ export function useHorizontalVirtualColumns({
 
     const ro = new ResizeObserver(scheduleViewportUpdate);
     ro.observe(el);
-    updateViewport();
+    syncViewport();
     el.addEventListener('scroll', onScroll, { passive: true });
 
     return () => {
@@ -652,6 +679,19 @@ export function useHorizontalVirtualColumns({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current);
     };
+  }, [applyWindowRange, scrollRef, syncViewport]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    return subscribeProgrammaticScrollSync(el, 'range', () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
+      scrollLeftRef.current = Math.max(0, Math.round(el.scrollLeft));
+      applyWindowRange(scrollLeftRef.current, viewportWidthRef.current);
+    });
   }, [applyWindowRange, scrollRef]);
 
   useEffect(() => {
@@ -695,11 +735,11 @@ export function useHorizontalVirtualColumns({
     frozenScrollLeftRef.current = 0;
     const el = scrollRef.current;
     if (el && el.scrollLeft !== 0) {
-      el.scrollTo({ left: 0, behavior: 'auto' });
+      scrollElementForNavigation(el, { left: 0, behavior: 'auto' });
     }
     const frozenEl = frozenScrollRef?.current;
     if (frozenEl && frozenEl.scrollLeft !== 0) {
-      frozenEl.scrollTo({ left: 0, behavior: 'auto' });
+      scrollElementForNavigation(frozenEl, { left: 0, behavior: 'auto' });
     }
     setFrozenScrollLeftState(0);
     const paneState = resolvePaneState(viewportWidthRef.current);
@@ -788,6 +828,7 @@ export function useHorizontalVirtualColumns({
         leadingSpacerWidth: 0,
         trailingSpacerWidth: 0,
         columnLayoutByColumn: new Map<number, HorizontalVirtualColumnEntry>(),
+        syncViewport,
         debug: {
           viewportWidth,
           scrollLeft: scrollLeftRef.current,
@@ -855,6 +896,7 @@ export function useHorizontalVirtualColumns({
       leadingSpacerWidth,
       trailingSpacerWidth,
       columnLayoutByColumn: dynamicColumnLayoutByColumn,
+      syncViewport,
       debug: {
         viewportWidth,
         scrollLeft: scrollLeftRef.current,
@@ -876,6 +918,7 @@ export function useHorizontalVirtualColumns({
     paneState.clampedFrozenScrollLeft,
     paneState.isFrozenOverflowing,
     paneState.visibleFrozenWidth,
+    syncViewport,
     viewportWidth,
   ]);
 }

@@ -1,3 +1,5 @@
+import { synchronizeProgrammaticScroll } from '@/utils/virtualization/programmaticScrollSync';
+
 export type NavigationScrollBehavior = 'auto' | 'smooth' | 'smart';
 
 export interface NavigationScrollOptions {
@@ -106,6 +108,10 @@ function setAxisPosition(
       if (linkedElement !== element) linkedElement.scrollLeft = value;
     });
   }
+  synchronizeProgrammaticScroll(element);
+  linkedElements.forEach((linkedElement) => {
+    if (linkedElement !== element) synchronizeProgrammaticScroll(linkedElement);
+  });
 }
 
 function getAxisTarget(element: HTMLElement, axis: ScrollAxis, requestedTarget: number) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, type MutableRefObject } from 'react';
 
 import type {
   SearchMatch,
@@ -67,6 +67,10 @@ interface UseWorkbookHorizontalNavigationEffectsParams {
   suppressGuidedNavigationUntilRef: MutableRefObject<number>;
 }
 
+interface UseWorkbookHorizontalNavigationEffectsResult {
+  markViewportRestored: () => void;
+}
+
 export function useWorkbookHorizontalNavigationEffects({
   active,
   activeHunkIdx,
@@ -103,9 +107,15 @@ export function useWorkbookHorizontalNavigationEffects({
   lastAutoRowKeyRef,
   lastAutoCellKeyRef,
   suppressGuidedNavigationUntilRef,
-}: UseWorkbookHorizontalNavigationEffectsParams): void {
+}: UseWorkbookHorizontalNavigationEffectsParams): UseWorkbookHorizontalNavigationEffectsResult {
   const lastGuidedNavigationKeyRef = useRef('');
   const lastAppliedSearchKeyRef = useRef('');
+  const guidedNavigationKey = activeDiffRegion
+    ? `${guidedPulseNonce}:${activeDiffRegion.id}:${navigationLayoutKey}`
+    : '';
+  const markViewportRestored = useCallback(() => {
+    lastGuidedNavigationKeyRef.current = guidedNavigationKey;
+  }, [guidedNavigationKey]);
 
   useEffect(() => {
     if (!activeSearchMatch) {
@@ -190,7 +200,7 @@ export function useWorkbookHorizontalNavigationEffects({
     suppressGuidedNavigationUntilRef,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     lastGuidedNavigationKeyRef.current = '';
   }, [activeDiffRegion?.id, activeWorkbookSection?.name]);
 
@@ -199,7 +209,7 @@ export function useWorkbookHorizontalNavigationEffects({
     if (!activeDiffRegion || !activeWorkbookSection) return;
     if (activeDiffRegion.sheetName !== activeWorkbookSection.name) return;
     if (getNow() < suppressGuidedNavigationUntilRef.current) return;
-    const navigationKey = `${guidedPulseNonce}:${activeDiffRegion.id}:${navigationLayoutKey}`;
+    const navigationKey = guidedNavigationKey;
     if (lastGuidedNavigationKeyRef.current === navigationKey) return;
 
     const anchorPatch = activeDiffRegion.patches[0] ?? null;
@@ -213,6 +223,7 @@ export function useWorkbookHorizontalNavigationEffects({
     let followUpRafId = 0;
     let settleRafId = 0;
     const rafId = requestAnimationFrame(() => {
+      if (lastGuidedNavigationKeyRef.current === navigationKey) return;
       if (targetRowIndex >= 0) {
         markProgrammaticScroll('left', 640);
         markProgrammaticScroll('right', 640);
@@ -223,8 +234,10 @@ export function useWorkbookHorizontalNavigationEffects({
       }
       focusWorkbookDiffRegion(activeDiffRegion);
       followUpRafId = requestAnimationFrame(() => {
+        if (lastGuidedNavigationKeyRef.current === navigationKey) return;
         focusWorkbookDiffRegion(activeDiffRegion);
         settleRafId = requestAnimationFrame(() => {
+          if (lastGuidedNavigationKeyRef.current === navigationKey) return;
           focusWorkbookDiffRegion(activeDiffRegion);
           lastGuidedNavigationKeyRef.current = navigationKey;
         });
@@ -241,9 +254,8 @@ export function useWorkbookHorizontalNavigationEffects({
     activeDiffRegion,
     activeWorkbookSection,
     focusWorkbookDiffRegion,
-    guidedPulseNonce,
+    guidedNavigationKey,
     markProgrammaticScroll,
-    navigationLayoutKey,
     rowItemIndexBySide,
     scrollToIndex,
     scrollToResolvedLine,
@@ -369,4 +381,6 @@ export function useWorkbookHorizontalNavigationEffects({
     selectedCell,
     selectionFocusIntent,
   ]);
+
+  return { markViewportRestored };
 }

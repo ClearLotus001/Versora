@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { HorizontalVirtualColumnEntry } from '@/hooks/virtualization/useHorizontalVirtualColumns';
 import { LN_W } from '@/constants/layout';
 import { FONT_CODE, getWorkbookFontScale } from '@/constants/typography';
@@ -29,7 +29,7 @@ import {
   resolveWorkbookVersionAccent,
 } from '@/utils/workbook/workbookRowVisuals';
 import WorkbookAnchorTooltip, { type WorkbookAnchorTooltipState } from '@/components/workbook/WorkbookAnchorTooltip';
-import { subscribeWorkbookCanvasScrollFrame } from '@/utils/workbook/workbookCanvasFrameScheduler';
+import { subscribeWorkbookCanvasScrollRefFrame } from '@/utils/workbook/workbookCanvasFrameScheduler';
 import {
   formatWorkbookHiddenColumnMarkerCount,
   getWorkbookHiddenColumnMarkerWidth,
@@ -554,12 +554,9 @@ const WorkbookCanvasHeaderStrip = memo(({
     viewportWidth,
   ]);
 
-  useEffect(() => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-
-    let lastScrollLeft = scroller.scrollLeft ?? 0;
-    return subscribeWorkbookCanvasScrollFrame(scroller, ({ scrollLeft: nextScrollLeft }) => {
+  useLayoutEffect(() => {
+    let lastScrollLeft = scrollRef.current?.scrollLeft ?? 0;
+    return subscribeWorkbookCanvasScrollRefFrame(scrollRef, ({ scrollLeft: nextScrollLeft }) => {
       setHiddenColumnHover((prev) => (prev !== null ? null : prev));
       if (nextScrollLeft === lastScrollLeft) return;
       lastScrollLeft = nextScrollLeft;

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   type MutableRefObject,
   type RefObject,
@@ -11,6 +12,9 @@ import type {
   WorkbookSelectedCell,
 } from '@/types';
 import type { CollapseExpansionState } from '@/utils/collapse/collapseState';
+import {
+  scrollElementForNavigation,
+} from '@/utils/navigation/animatedScroll';
 import {
   buildWorkbookHorizontalLayoutSnapshot,
   shouldRestoreWorkbookLayoutSnapshot,
@@ -51,6 +55,7 @@ interface UseWorkbookHorizontalViewportSyncResult {
   isUserScrollPaused: () => boolean;
   isAutoScrollSuppressed: () => boolean;
   handlePaneScroll: (source: 'left' | 'right') => void;
+  restoreViewport: () => boolean;
 }
 
 export function useWorkbookHorizontalViewportSync({
@@ -74,7 +79,6 @@ export function useWorkbookHorizontalViewportSync({
 }: UseWorkbookHorizontalViewportSyncParams): UseWorkbookHorizontalViewportSyncResult {
   const snapshotEmitRafRef = useRef(0);
   const snapshotEmitTimeoutRef = useRef<number | null>(null);
-  const restoreRafRef = useRef(0);
   const lastRestoredSnapshotKeyRef = useRef('');
   const lastViewportSheetNameRef = useRef<string | null>(activeSheetName);
   const userScrollPauseUntilRef = useRef(0);
@@ -105,7 +109,7 @@ export function useWorkbookHorizontalViewportSync({
   }), [leftScrollRef, rightScrollRef]);
 
   const emitLayoutSnapshot = useCallback(() => {
-    if (!active || !onLayoutSnapshotChange) return;
+    if (!active || !isExpandedBlocksContextSettled || !onLayoutSnapshotChange) return;
     const scrollState = readSnapshotScrollState();
     const snapshot = buildWorkbookHorizontalLayoutSnapshot(
       activeSheetName,
@@ -133,6 +137,7 @@ export function useWorkbookHorizontalViewportSync({
     activeRegionId,
     activeSheetName,
     expandedBlocks,
+    isExpandedBlocksContextSettled,
     onLayoutSnapshotChange,
     readSnapshotScrollState,
     splitRatio,
@@ -193,7 +198,7 @@ export function useWorkbookHorizontalViewportSync({
     scheduleLayoutSnapshot();
   }, [scheduleLayoutSnapshot, splitRatio]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previousSheetName = lastViewportSheetNameRef.current;
     lastViewportSheetNameRef.current = activeSheetName;
 
@@ -214,56 +219,9 @@ export function useWorkbookHorizontalViewportSync({
     markProgrammaticScroll('left', 520);
     markProgrammaticScroll('right', 520);
     onResetViewportState?.();
-    leftScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    rightScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    if (leftScrollRef.current) scrollElementForNavigation(leftScrollRef.current, { top: 0, left: 0, behavior: 'auto' });
+    if (rightScrollRef.current) scrollElementForNavigation(rightScrollRef.current, { top: 0, left: 0, behavior: 'auto' });
   }, [activeSheetName, leftScrollRef, markProgrammaticScroll, onResetViewportState, rightScrollRef]);
-
-  useEffect(() => {
-    const left = leftScrollRef.current;
-    const right = rightScrollRef.current;
-    if (!left || !right) return;
-
-    let guardActive = true;
-    let timerId: number | null = null;
-
-    const guardScrollLeft = (element: HTMLDivElement) => {
-      if (!guardActive) return;
-      if (element.scrollLeft !== 0) {
-        element.scrollLeft = 0;
-      }
-    };
-
-    const onLeftScroll = () => guardScrollLeft(left);
-    const onRightScroll = () => guardScrollLeft(right);
-
-    const finishGuard = () => {
-      guardActive = false;
-      left.removeEventListener('scroll', onLeftScroll);
-      right.removeEventListener('scroll', onRightScroll);
-      window.removeEventListener('pointerdown', onUserInput, true);
-      window.removeEventListener('keydown', onUserInput, true);
-      window.removeEventListener('wheel', onUserInput, true);
-      if (timerId != null) {
-        window.clearTimeout(timerId);
-        timerId = null;
-      }
-    };
-
-    const onUserInput = (event: Event) => {
-      if (event.isTrusted) finishGuard();
-    };
-
-    left.addEventListener('scroll', onLeftScroll);
-    right.addEventListener('scroll', onRightScroll);
-    // Keep the initial viewport stable until the user acts. Capture input before
-    // React handles toolbar navigation so its programmatic scroll is preserved.
-    window.addEventListener('pointerdown', onUserInput, { capture: true, passive: true });
-    window.addEventListener('keydown', onUserInput, true);
-    window.addEventListener('wheel', onUserInput, { capture: true, passive: true });
-    timerId = window.setTimeout(finishGuard, 500);
-
-    return finishGuard;
-  }, [leftScrollRef, rightScrollRef]);
 
   useEffect(() => {
     if (!isExpandedBlocksContextSettled) return;
@@ -280,20 +238,20 @@ export function useWorkbookHorizontalViewportSync({
     );
   }, [active, activeRegionId, activeSheetName, expandedBlocks, isExpandedBlocksContextSettled, onExpandedBlocksChange]);
 
-  useEffect(() => {
-    if (!active) return;
+  const restoreViewport = useCallback(() => {
+    if (!active || !isExpandedBlocksContextSettled) return false;
     if (!layoutSnapshot || !shouldRestoreWorkbookLayoutSnapshot(
       layoutSnapshot,
       activeRegionId,
       activeSheetName,
     )) {
       lastRestoredSnapshotKeyRef.current = '';
-      return;
+      return false;
     }
 
     const left = leftScrollRef.current;
     const right = rightScrollRef.current;
-    if (!left || !right) return;
+    if (!left || !right) return false;
     const snapshot = layoutSnapshot;
 
     const restoreKey = [
@@ -306,35 +264,30 @@ export function useWorkbookHorizontalViewportSync({
       snapshot.rightScrollLeft,
       snapshot.splitRatio ?? '',
     ].join(':');
-    if (lastRestoredSnapshotKeyRef.current === restoreKey) return;
-    lastRestoredSnapshotKeyRef.current = restoreKey;
+    if (lastRestoredSnapshotKeyRef.current === restoreKey) return false;
+    const targetSplitRatio = restoreSplitRatio(snapshot.splitRatio ?? defaultSplitRatio);
+    if (Math.abs(splitRatio - targetSplitRatio) >= 0.001) return false;
+    if (snapshotEmitTimeoutRef.current != null) {
+      window.clearTimeout(snapshotEmitTimeoutRef.current);
+      snapshotEmitTimeoutRef.current = null;
+    }
     suppressAutoScrollUntilRef.current = getNow() + 520;
-    restoreSplitRatio(snapshot.splitRatio ?? defaultSplitRatio);
     if (selectedCell && selectedCell.sheetName === activeSheetName && activeSheetName) {
       const selectionKey = buildSelectionAutoScrollKey(activeSheetName, selectedCell);
       if (selectedCell.kind !== 'column') lastAutoRowKeyRef.current = selectionKey;
       if (selectedCell.kind !== 'row') lastAutoCellKeyRef.current = selectionKey;
     }
-    const raf1 = requestAnimationFrame(() => {
-      const raf2 = requestAnimationFrame(() => {
-        markProgrammaticScroll('left', 420);
-        markProgrammaticScroll('right', 420);
-        left.scrollTop = snapshot.leftScrollTop;
-        right.scrollTop = snapshot.rightScrollTop;
-        left.scrollLeft = snapshot.leftScrollLeft;
-        right.scrollLeft = snapshot.rightScrollLeft;
-      });
-      restoreRafRef.current = raf2;
-    });
-
-    return () => {
-      cancelAnimationFrame(raf1);
-      if (restoreRafRef.current) cancelAnimationFrame(restoreRafRef.current);
-    };
+    markProgrammaticScroll('left', 420);
+    markProgrammaticScroll('right', 420);
+    scrollElementForNavigation(left, { top: snapshot.leftScrollTop, left: snapshot.leftScrollLeft, behavior: 'auto' });
+    scrollElementForNavigation(right, { top: snapshot.rightScrollTop, left: snapshot.rightScrollLeft, behavior: 'auto' });
+    lastRestoredSnapshotKeyRef.current = restoreKey;
+    return true;
   }, [
     active,
     activeRegionId,
     activeSheetName,
+    isExpandedBlocksContextSettled,
     layoutSnapshot,
     leftScrollRef,
     markProgrammaticScroll,
@@ -342,15 +295,15 @@ export function useWorkbookHorizontalViewportSync({
     restoreSplitRatio,
     rightScrollRef,
     selectedCell,
+    splitRatio,
   ]);
 
   useEffect(() => () => {
     if (snapshotEmitRafRef.current) cancelAnimationFrame(snapshotEmitRafRef.current);
     if (snapshotEmitTimeoutRef.current != null) window.clearTimeout(snapshotEmitTimeoutRef.current);
-    if (restoreRafRef.current) cancelAnimationFrame(restoreRafRef.current);
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     lastAutoRowKeyRef.current = '';
     lastAutoCellKeyRef.current = '';
   }, [activeSheetName, diffIdentity]);
@@ -365,5 +318,6 @@ export function useWorkbookHorizontalViewportSync({
     isUserScrollPaused,
     isAutoScrollSuppressed,
     handlePaneScroll,
+    restoreViewport,
   };
 }

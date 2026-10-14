@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { scrollElementForNavigation } from '@/utils/navigation/animatedScroll';
+import { subscribeProgrammaticScrollSync } from '@/utils/virtualization/programmaticScrollSync';
 import {
   VIRTUAL_FAST_SCROLL_END_EVENT,
   beginVirtualFastScrollSession,
@@ -21,6 +22,7 @@ export interface VariableVirtualResult {
   startIdx: number;
   endIdx: number;
   offsetTop: number;
+  syncViewport: () => void;
   scrollToIndex: (idx: number, align?: 'start' | 'center', behavior?: 'auto' | 'smooth' | 'smart') => void;
   debug: VariableVirtualDebugInfo;
 }
@@ -250,6 +252,21 @@ export function useVariableVirtual(
     setRangeState(next);
   }, [averageHeight, enabled, heights.length, overscanFactor, overscanMin, prefixSums, totalH]);
 
+  const syncViewport = useCallback(() => {
+    if (!enabled) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+    const nextViewH = Math.max(0, el.clientHeight);
+    viewHRef.current = nextViewH;
+    latestScrollTopRef.current = Math.max(0, Math.round(el.scrollTop));
+    setViewH(prev => (prev === nextViewH ? prev : nextViewH));
+    applyRange(latestScrollTopRef.current, nextViewH);
+  }, [applyRange, enabled, scrollRef]);
+
   useLayoutEffect(() => {
     if (!enabled) return;
     const el = scrollRef.current;
@@ -263,13 +280,24 @@ export function useVariableVirtual(
     });
     ro.observe(el);
 
-    const nextViewH = Math.max(0, el.clientHeight);
-    viewHRef.current = nextViewH;
-    latestScrollTopRef.current = Math.max(0, Math.round(el.scrollTop));
-    setViewH(prev => (prev === nextViewH ? prev : nextViewH));
-    applyRange(latestScrollTopRef.current, nextViewH);
+    syncViewport();
 
     return () => ro.disconnect();
+  }, [applyRange, enabled, scrollRef, syncViewport]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!enabled || !el) return;
+    return subscribeProgrammaticScrollSync(el, 'range', () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
+      latestScrollTopRef.current = Math.max(0, Math.round(el.scrollTop));
+      if (!isVirtualFastScrollSessionActive(el)) {
+        applyRange(latestScrollTopRef.current, viewHRef.current);
+      }
+    });
   }, [applyRange, enabled, scrollRef]);
 
   useEffect(() => {
@@ -406,6 +434,7 @@ export function useVariableVirtual(
     startIdx: effectiveRangeState.startIdx,
     endIdx: effectiveRangeState.endIdx,
     offsetTop: effectiveRangeState.offsetTop,
+    syncViewport,
     scrollToIndex,
     debug: {
       viewportHeight: viewH,

@@ -26,12 +26,21 @@ test('workbook visibility model is shared by panels search goto and canvas polic
   const viewModel = read('src/hooks/app/useAppViewModel.ts');
   const searchModel = read('src/hooks/app/useAppSearchModel.ts');
   const appContent = read('src/components/app-shell/AppContent.tsx');
+  const workbookPanel = read('src/components/workbook/WorkbookPanel.tsx');
   const comparePanel = read('src/components/workbook/WorkbookComparePanel.tsx');
   const horizontalPanel = read('src/components/workbook/WorkbookHorizontalPanel.tsx');
 
   assert.match(viewModel, /buildWorkbookVisibilityModel/);
   assert.match(searchModel, /workbookVisibilityModel/);
-  assert.match(appContent, /visibilityModel=\{workbookVisibilityModel\}/);
+  assert.match(appContent, /const sharedWorkbookPanelProps = \{[\s\S]*?visibilityModel: workbookVisibilityModel,/);
+  const panelBranches = [...appContent.matchAll(/<WorkbookPanel\s+kind="(compare|horizontal)"\s+panelProps=\{\{([\s\S]*?)\}\}\s*\/>/g)];
+  assert.deepEqual(panelBranches.map(branch => branch[1]), ['compare', 'horizontal']);
+  panelBranches.forEach(branch => {
+    assert.match(branch[2]!, /^\s*\.\.\.sharedWorkbookPanelProps,/);
+    assert.doesNotMatch(branch[2]!, /\bvisibilityModel\s*:/);
+  });
+  assert.match(workbookPanel, /<WorkbookComparePanel \{\.\.\.props\.panelProps\}\s*\/>/);
+  assert.match(workbookPanel, /<WorkbookHorizontalPanel \{\.\.\.props\.panelProps\}\s*\/>/);
   assert.match(comparePanel, /filterWorkbookSectionsByVisibility/);
   assert.match(horizontalPanel, /filterWorkbookSectionsByVisibility/);
   assert.match(comparePanel, /filterWorkbookRowsByVisibility/);

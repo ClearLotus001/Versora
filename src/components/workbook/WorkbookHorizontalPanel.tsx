@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -352,6 +353,7 @@ const WorkbookHorizontalPanel = memo(({
     isUserScrollPaused,
     isAutoScrollSuppressed,
     handlePaneScroll,
+    restoreViewport,
   } = useWorkbookHorizontalViewportSync({
     active,
     leftScrollRef,
@@ -526,7 +528,7 @@ const WorkbookHorizontalPanel = memo(({
   const compareStateByRow = renderModel.compareStateByRow;
   const compareCellsByRowNumber = renderModel.compareCellsByRowNumber;
   const renderItemIndexes = renderModel.renderItemIndexes;
-  const { totalH, startIdx, endIdx, offsetTop: rowWindowOffsetTop, scrollToIndex, debug: rowVirtualDebug } = useVariableVirtual(
+  const { totalH, startIdx, endIdx, offsetTop: rowWindowOffsetTop, scrollToIndex, syncViewport: syncRowViewport, debug: rowVirtualDebug } = useVariableVirtual(
     rowVirtualHeights,
     leftScrollRef as RefObject<HTMLDivElement | null>,
     {
@@ -581,6 +583,8 @@ const WorkbookHorizontalPanel = memo(({
     syncKey: activeWorkbookSection?.name ?? '',
     preparedLayout: sharedVirtualColumnsLayout,
   });
+  const syncLeftColumnViewport = leftVirtualColumns.syncViewport;
+  const syncRightColumnViewport = rightVirtualColumns.syncViewport;
   const paneVirtualColumnsBySide = useMemo(
     () => ({
       left: leftVirtualColumns,
@@ -1005,7 +1009,7 @@ const WorkbookHorizontalPanel = memo(({
     itemCount: items.length,
     totalHeight: totalH,
   }), [effectiveExpandedBlocks, items.length, totalH]);
-  useWorkbookHorizontalNavigationEffects({
+  const { markViewportRestored } = useWorkbookHorizontalNavigationEffects({
     active,
     activeHunkIdx,
     activeSearchMatch,
@@ -1042,6 +1046,14 @@ const WorkbookHorizontalPanel = memo(({
     lastAutoCellKeyRef,
     suppressGuidedNavigationUntilRef,
   });
+  useLayoutEffect(() => {
+    if (!restoreViewport()) return;
+    markViewportRestored();
+    // Both panes must use the restored offsets in the same prepaint commit.
+    syncRowViewport();
+    syncLeftColumnViewport();
+    syncRightColumnViewport();
+  }, [markViewportRestored, restoreViewport, syncLeftColumnViewport, syncRightColumnViewport, syncRowViewport]);
 
   useEffect(() => {
     if (!tooltipDisabled) return;

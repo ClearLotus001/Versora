@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import '../../src/utils/app/e2eBridge';
 import '../../src/utils/app/perfBridge';
 import { selectDiffTypeFilter } from './helpers/diffTypeFilter';
+import { assertWorkbookCompositedPaint, createWorkbookPaintProbe, type WorkbookPaintProbe } from './helpers/workbookPaintProbe';
 
 const CELL_MARKERS = ['ALPHA', 'BRAVO', 'ADDONLY', 'DELONLY', 'STABLE'];
 
@@ -23,6 +24,7 @@ interface CanvasFrame {
 interface RefreshFrame {
   beforeCallbacks?: RefreshFrame;
   at: number;
+  wallTime: number;
   layout: string;
   sheet: string | null;
   pending: number;
@@ -34,6 +36,8 @@ interface RefreshFrame {
   loadingVisible: boolean;
   fastScrollLayers: Array<{ id: number; opacity: number }>;
   activeScrollSessions: number;
+  scrollers: Array<{ id: number; scrollTop: number; scrollLeft: number; scrollHeight: number; clientHeight: number }>;
+  scrollEvents: Array<{ type: 'setter' | 'event'; wallTime: number; id: number; before?: number; scrollTop: number }>;
   canvases: CanvasFrame[];
 }
 
@@ -103,10 +107,31 @@ async function installFrameProbe(page: Page) {
     const activeAnimations = (element: Element) => element.getAnimations()
       .filter((animation) => animation.playState === 'running')
       .map((animation) => animation.id || (animation instanceof CSSAnimation ? animation.animationName : 'transition'));
+    let scrollEvents: RefreshFrame['scrollEvents'] = [];
+    const scrollTopProperty = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!;
+    Object.defineProperty(Element.prototype, 'scrollTop', {
+      ...scrollTopProperty,
+      set(this: Element, value: number) {
+        const before = scrollTopProperty.get!.call(this) as number;
+        scrollTopProperty.set!.call(this, value);
+        if (this.querySelector('[data-workbook-cell-canvas="true"]')) scrollEvents.push({
+          type: 'setter', wallTime: performance.timeOrigin + performance.now(), id: objectId(this),
+          before, scrollTop: scrollTopProperty.get!.call(this) as number,
+        });
+      },
+    });
+    document.addEventListener('scroll', (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.querySelector('[data-workbook-cell-canvas="true"]')) scrollEvents.push({
+        type: 'event', wallTime: performance.timeOrigin + performance.now(), id: objectId(target), scrollTop: target.scrollTop,
+      });
+    }, true);
     const sample = (): RefreshFrame => {
       const root = document.querySelector('[data-testid="comparison-content"]');
       const surface = document.querySelector('[data-testid="workbook-table-surface"]');
       const snapshot = window.__SVN_DIFF_PERF__?.getSnapshot();
+      const at = performance.now();
+      const wallTime = performance.timeOrigin + at;
       const canvases: CanvasFrame[] = [];
       // Header flags describe any header in the run, not a header-only canvas.
       // Semantic markers below require an actual data row even when the run includes a header.
@@ -166,7 +191,8 @@ async function installFrameProbe(page: Page) {
         });
       }
       return {
-        at: performance.now(), layout: snapshot?.layout ?? '', sheet: snapshot?.activeWorkbookSheetName ?? null,
+        at, wallTime,
+        layout: snapshot?.layout ?? '', sheet: snapshot?.activeWorkbookSheetName ?? null,
         pending: snapshot?.workbookArtifact?.cache.pending ?? 0,
         rootId: objectId(root), rootOpacity: root ? Number(getComputedStyle(root).opacity) : 0,
         rootAnimations: root ? activeAnimations(root) : [],
@@ -177,6 +203,12 @@ async function installFrameProbe(page: Page) {
           id: objectId(layer), opacity: Number(getComputedStyle(layer).opacity),
         })),
         activeScrollSessions: document.querySelectorAll('[data-virtual-fast-scroll-active="true"]').length,
+        scrollers: [...new Set([...document.querySelectorAll('[data-workbook-cell-canvas="true"]')]
+          .map((canvas) => canvas.closest('.overflow-auto, .overflow-y-auto.overflow-x-auto'))
+          .filter((scroller): scroller is HTMLElement => scroller instanceof HTMLElement))]
+          .map((scroller) => ({ id: objectId(scroller), scrollTop: scroller.scrollTop, scrollLeft: scroller.scrollLeft,
+            scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight })),
+        scrollEvents: scrollEvents.slice(-10),
         canvases,
       };
     };
@@ -187,8 +219,8 @@ async function installFrameProbe(page: Page) {
     const tick = () => {
       if (!running) return;
       const beforeCallbacks = sample();
-      // All callbacks in this rendering update must finish before judging a presented frame.
-      // A virtualizer may repaint later in the same rAF batch, after this probe's callback.
+      // Head and timer snapshots diagnose DOM state. The timer is a separate task;
+      // actual presentation is asserted against independent compositor screenshots.
       sampleTimer = window.setTimeout(() => {
         if (!running) return;
         frames.push({ ...sample(), beforeCallbacks });
@@ -198,7 +230,7 @@ async function installFrameProbe(page: Page) {
     window.__workbookRefreshFrames = {
       start() {
         cancelAnimationFrame(frameId); clearTimeout(sampleTimer);
-        frames = [sample()]; running = true; frameId = requestAnimationFrame(tick);
+        scrollEvents = []; frames = [sample()]; running = true; frameId = requestAnimationFrame(tick);
       },
       stop() { running = false; cancelAnimationFrame(frameId); clearTimeout(sampleTimer); return frames; },
       peek: sample,
@@ -247,9 +279,13 @@ async function loadContinuityWorkbook(page: Page, installProbe = true, layout: '
 }
 
 async function recordRefresh(
-  page: Page, testInfo: TestInfo, label: string, marker: string, reducedMotion: boolean, action: () => Promise<unknown>,
+  page: Page, testInfo: TestInfo, paintProbe: WorkbookPaintProbe,
+  label: string, marker: string, reducedMotion: boolean, action: () => Promise<unknown>,
 ) {
+  const surface = (await page.getByTestId('workbook-table-surface').boundingBox())!;
+  // Establish a clock-correlated state before Chromium can send its first frame.
   await page.evaluate(() => window.__workbookRefreshFrames!.start());
+  await paintProbe.start();
   let frames: RefreshFrame[] = [];
   try {
     await action();
@@ -265,16 +301,13 @@ async function recordRefresh(
     await framesAfterPaint(page, 2);
   } finally {
     frames = await page.evaluate(() => window.__workbookRefreshFrames!.stop());
+    const paintFrames = await paintProbe.stop();
     const tracePath = testInfo.outputPath(`${label}-frames.json`);
     await writeFile(tracePath, JSON.stringify(frames, null, 2));
     await testInfo.attach(`${label}-frames`, { path: tracePath, contentType: 'application/json' });
+    await assertWorkbookCompositedPaint(page, testInfo, label, paintFrames,
+      frames.flatMap((frame) => frame.beforeCallbacks ? [frame.beforeCallbacks, frame] : [frame]), surface);
   }
-  const blankFrames = frames.filter((frame) => !frame.canvases.some((canvas) => (
-    canvas.opacity > 0.05 && canvas.opaquePixels > 0 && canvas.inkPixels > 0 && canvas.markers.length > 0
-  )));
-  // Cold disk windows are reported separately; an already available view must stay painted.
-  const blankReadyFrames = blankFrames.filter((frame) => frame.pending === 0);
-  expect.soft(blankReadyFrames, `${label}: available cell content disappears during refresh`).toEqual([]);
   const outerFadeFrames = frames.filter((frame) => frame.rootOpacity < 0.99 || frame.rootAnimations.length > 0);
   expect.soft(outerFadeFrames, `${label}: refresh animates the entire comparison shell`).toEqual([]);
   if (reducedMotion) {
@@ -355,59 +388,65 @@ async function prepareDeepScroll(page: Page, layout: 'unified' | 'split-v' | 'sp
 
 for (const reducedMotion of [false, true]) {
   test(`workbook refresh retains painted cells across layouts and filters (${reducedMotion ? 'reduced' : 'normal'} motion)`, async ({ page }, testInfo) => {
+    // Decoding every captured PNG adds probe work on CI; the individual action,
+    // animation, cache and scroll-settling deadlines remain unchanged.
+    test.setTimeout(75_000);
     await page.emulateMedia({ reducedMotion: reducedMotion ? 'reduce' : 'no-preference' });
     await loadContinuityWorkbook(page);
-    const refresh = (label: string, marker: string, action: () => Promise<unknown>) => recordRefresh(page, testInfo, label, marker, reducedMotion, action);
-    for (const layout of ['unified', 'split-v', 'split-h'] as const) {
-      await refresh(`layout-${layout}`, 'ALPHA', () => page.getByTestId(`toolbar-layout-${layout}`).click());
-      await refresh(`deep-scroll-${layout}`, 'ALPHA', () => page.evaluate(() => {
-        for (const canvas of document.querySelectorAll('[data-workbook-cell-canvas="true"]')) {
-          const scroller = canvas.closest('.overflow-auto, .overflow-y-auto.overflow-x-auto');
-          if (scroller) scroller.scrollTop = 1800;
-        }
+    const paintProbe = await createWorkbookPaintProbe(page);
+    try {
+      const refresh = (label: string, marker: string, action: () => Promise<unknown>) => recordRefresh(page, testInfo, paintProbe, label, marker, reducedMotion, action);
+      for (const layout of ['unified', 'split-v', 'split-h'] as const) {
+        await refresh(`layout-${layout}`, 'ALPHA', () => page.getByTestId(`toolbar-layout-${layout}`).click());
+        await refresh(`deep-scroll-${layout}`, 'ALPHA', () => page.evaluate(() => {
+          for (const canvas of document.querySelectorAll('[data-workbook-cell-canvas="true"]')) {
+            const scroller = canvas.closest('.overflow-auto, .overflow-y-auto.overflow-x-auto');
+            if (scroller) scroller.scrollTop = 1800;
+          }
+        }));
+        await refresh(`differences-only-${layout}`, 'ALPHA', () => page.getByTestId('toolbar-diff-only').click());
+        await refresh(`all-rows-${layout}`, 'ALPHA', () => page.getByTestId('toolbar-diff-only').click());
+      }
+      await refresh('sheet-bravo', 'BRAVO', () => selectSheet(page, 'Bravo'));
+      await refresh('sheet-alpha', 'ALPHA', () => selectSheet(page, 'Alpha'));
+      await refresh('type-modified', 'ALPHA', () => selectDiffTypeFilter(page, 'modify'));
+      await refresh('type-added', 'ADDONLY', () => selectDiffTypeFilter(page, 'add'));
+      await refresh('type-deleted', 'DELONLY', () => selectDiffTypeFilter(page, 'delete'));
+      await refresh('type-all', 'ALPHA', () => selectDiffTypeFilter(page, 'all'));
+      for (const layout of ['unified', 'split-v', 'split-h'] as const) {
+        await prepareDeepScroll(page, layout);
+        const filterLabel = `active-scroll-filter-${layout}`;
+        await refresh(filterLabel, 'ALPHA', () => interruptDeepScroll(page, testInfo, filterLabel, 'filter'));
+        await prepareDeepScroll(page, layout);
+        const sheetLabel = `active-scroll-sheet-${layout}`;
+        await refresh(sheetLabel, 'BRAVO', () => interruptDeepScroll(page, testInfo, sheetLabel, 'sheet'));
+      }
+      await refresh('rapid-sheet-layout-filter', 'BRAVO', () => page.evaluate(async () => {
+        // Successive real DOM clicks leave no artificial settling delay between requests.
+        const click = (testId: string) => document.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)!.click();
+        const sheet = (name: string) => [...document.querySelectorAll<HTMLButtonElement>('[data-testid="workbook-sheet-tab"]')]
+          .find((button) => button.textContent?.includes(name))!.click();
+        const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        const filter = async (value: string) => {
+          if (!document.querySelector(`[data-testid="diff-filter-${value}"]`)) {
+            click('diff-type-filter-trigger');
+            await nextFrame();
+          }
+          click(`diff-filter-${value}`);
+        };
+        click('toolbar-layout-unified');
+        await nextFrame();
+        sheet('Bravo');
+        await filter('modify');
+        click('toolbar-layout-split-v');
+        await nextFrame();
+        sheet('Alpha');
+        await filter('all');
+        click('toolbar-layout-split-h');
+        await nextFrame();
+        sheet('Bravo');
       }));
-      await refresh(`differences-only-${layout}`, 'ALPHA', () => page.getByTestId('toolbar-diff-only').click());
-      await refresh(`all-rows-${layout}`, 'ALPHA', () => page.getByTestId('toolbar-diff-only').click());
-    }
-    await refresh('sheet-bravo', 'BRAVO', () => selectSheet(page, 'Bravo'));
-    await refresh('sheet-alpha', 'ALPHA', () => selectSheet(page, 'Alpha'));
-    await refresh('type-modified', 'ALPHA', () => selectDiffTypeFilter(page, 'modify'));
-    await refresh('type-added', 'ADDONLY', () => selectDiffTypeFilter(page, 'add'));
-    await refresh('type-deleted', 'DELONLY', () => selectDiffTypeFilter(page, 'delete'));
-    await refresh('type-all', 'ALPHA', () => selectDiffTypeFilter(page, 'all'));
-    for (const layout of ['unified', 'split-v', 'split-h'] as const) {
-      await prepareDeepScroll(page, layout);
-      const filterLabel = `active-scroll-filter-${layout}`;
-      await refresh(filterLabel, 'ALPHA', () => interruptDeepScroll(page, testInfo, filterLabel, 'filter'));
-      await prepareDeepScroll(page, layout);
-      const sheetLabel = `active-scroll-sheet-${layout}`;
-      await refresh(sheetLabel, 'BRAVO', () => interruptDeepScroll(page, testInfo, sheetLabel, 'sheet'));
-    }
-    await refresh('rapid-sheet-layout-filter', 'BRAVO', () => page.evaluate(async () => {
-      // Successive real DOM clicks leave no artificial settling delay between requests.
-      const click = (testId: string) => document.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)!.click();
-      const sheet = (name: string) => [...document.querySelectorAll<HTMLButtonElement>('[data-testid="workbook-sheet-tab"]')]
-        .find((button) => button.textContent?.includes(name))!.click();
-      const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      const filter = async (value: string) => {
-        if (!document.querySelector(`[data-testid="diff-filter-${value}"]`)) {
-          click('diff-type-filter-trigger');
-          await nextFrame();
-        }
-        click(`diff-filter-${value}`);
-      };
-      click('toolbar-layout-unified');
-      await nextFrame();
-      sheet('Bravo');
-      await filter('modify');
-      click('toolbar-layout-split-v');
-      await nextFrame();
-      sheet('Alpha');
-      await filter('all');
-      click('toolbar-layout-split-h');
-      await nextFrame();
-      sheet('Bravo');
-    }));
-    await page.screenshot({ path: testInfo.outputPath(`refresh-${reducedMotion ? 'reduced' : 'normal'}-ready.png`), animations: 'disabled' });
+      await page.screenshot({ path: testInfo.outputPath(`refresh-${reducedMotion ? 'reduced' : 'normal'}-ready.png`), animations: 'disabled' });
+    } finally { await paintProbe.dispose(); }
   });
 }
