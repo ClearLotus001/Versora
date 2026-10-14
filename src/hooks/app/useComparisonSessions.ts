@@ -94,7 +94,7 @@ export default function useComparisonSessions(args: Args) {
     const a = latest.current;
     a.currentDiffDataRef.current = null;
     clearActiveWorkbookArtifact();
-    a.hasLoadedDiffRef.current = false;
+    a.diffLoad.actions.setLoaded(false);
     a.diffResultCacheRef.current = new Map();
     a.textLayoutSnapshotsRef.current = createEmptyTextLayoutSnapshots();
     a.textSharedExpandedBlocksRef.current = EMPTY_COLLAPSE_EXPANSION_STATE;
@@ -109,7 +109,6 @@ export default function useComparisonSessions(args: Args) {
     saveActive();
     clearActive();
     latest.current.currentDiffDataRef.current = data;
-    latest.current.diffLoad.actions.setLoaded(false);
     const id = `comparison-${++nextId.current}`;
     activeIdRef.current = id;
     setActiveId(id);
@@ -138,7 +137,6 @@ export default function useComparisonSessions(args: Args) {
     a.dialogs.actions.closeAll();
     if (!session) {
       clearActive();
-      a.diffLoad.actions.setLoaded(false);
       a.diffLoad.actions.setLoading(false);
       a.diffLoad.actions.setPhase('idle');
       a.diffLoad.actions.setError('');
@@ -152,7 +150,6 @@ export default function useComparisonSessions(args: Args) {
       a.workbookLayoutSnapshotsRef.current = session.workbookLayouts;
       a.workbookSharedExpandedBlocksRef.current = session.workbookExpanded;
       a.revisionOptionsRef.current = session.state.revisionOptions;
-      a.hasLoadedDiffRef.current = session.load.hasLoadedDiff;
       a.workbookCompareModeRef.current = session.state.workbookCompareMode;
       useAppStore.getState().restoreDiffSessionState(session.state);
       a.diffLoad.actions.setLoaded(session.load.hasLoadedDiff);

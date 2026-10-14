@@ -1,10 +1,10 @@
-import { useCallback, useMemo, useReducer, type SetStateAction } from 'react';
+import { useCallback, useMemo, useReducer, type MutableRefObject, type SetStateAction } from 'react';
 
 import type { DiffLoadController, DiffLoadState } from '@/hooks/app/contracts';
 
 type DiffLoadAction =
   | { type: 'setIsLoadingDiff'; value: SetStateAction<boolean> }
-  | { type: 'setHasLoadedDiff'; value: SetStateAction<boolean> }
+  | { type: 'setHasLoadedDiff'; value: boolean }
   | { type: 'setLoadPhase'; value: SetStateAction<DiffLoadState['loadPhase']> }
   | { type: 'setLoadError'; value: SetStateAction<string> }
   | { type: 'setLoadPerfMetrics'; value: SetStateAction<DiffLoadState['loadPerfMetrics']> };
@@ -18,7 +18,7 @@ function diffLoadReducer(state: DiffLoadState, action: DiffLoadAction): DiffLoad
     case 'setIsLoadingDiff':
       return { ...state, isLoadingDiff: resolveSetStateAction(state.isLoadingDiff, action.value) };
     case 'setHasLoadedDiff':
-      return { ...state, hasLoadedDiff: resolveSetStateAction(state.hasLoadedDiff, action.value) };
+      return { ...state, hasLoadedDiff: action.value };
     case 'setLoadPhase':
       return { ...state, loadPhase: resolveSetStateAction(state.loadPhase, action.value) };
     case 'setLoadError':
@@ -43,7 +43,7 @@ function createInitialDiffLoadState(): DiffLoadState {
   };
 }
 
-export default function useDiffLoadState() {
+export default function useDiffLoadState(hasLoadedDiffRef: MutableRefObject<boolean>) {
   const [state, dispatch] = useReducer(diffLoadReducer, undefined, () => createInitialDiffLoadState());
 
   const setLoading = useCallback((value: SetStateAction<boolean>) => {
@@ -51,8 +51,10 @@ export default function useDiffLoadState() {
   }, []);
 
   const setLoaded = useCallback((value: SetStateAction<boolean>) => {
-    dispatch({ type: 'setHasLoadedDiff', value });
-  }, []);
+    const resolved = resolveSetStateAction(hasLoadedDiffRef.current, value);
+    hasLoadedDiffRef.current = resolved;
+    dispatch({ type: 'setHasLoadedDiff', value: resolved });
+  }, [hasLoadedDiffRef]);
 
   const setPhase = useCallback((value: SetStateAction<DiffLoadState['loadPhase']>) => {
     dispatch({ type: 'setLoadPhase', value });

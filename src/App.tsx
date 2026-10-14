@@ -235,7 +235,7 @@ export default function App() {
     || showSvnConfig
     || showLocalFileCompare;
 
-  const diffLoad = useDiffLoadState();
+  const diffLoad = useDiffLoadState(hasLoadedDiffRef);
   const { state: diffLoadState } = diffLoad;
   const {
     isLoadingDiff,
@@ -390,8 +390,6 @@ export default function App() {
   // ── Chrome Effects ────────────────────────────────────────────────────
   useAppChromeEffects({
     revisionOptionsRef,
-    hasLoadedDiff,
-    hasLoadedDiffRef,
     workbookCompareModeRef,
   });
 

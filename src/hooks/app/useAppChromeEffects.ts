@@ -8,15 +8,11 @@ import { useAppStore } from '@/store/appStore';
 
 interface UseAppChromeEffectsArgs {
   revisionOptionsRef: MutableRefObject<SvnRevisionInfo[]>;
-  hasLoadedDiff: boolean;
-  hasLoadedDiffRef: MutableRefObject<boolean>;
   workbookCompareModeRef: MutableRefObject<WorkbookCompareMode>;
 }
 
 export default function useAppChromeEffects({
   revisionOptionsRef,
-  hasLoadedDiff,
-  hasLoadedDiffRef,
   workbookCompareModeRef,
 }: UseAppChromeEffectsArgs) {
   // ── Read state/setters directly from Zustand store ────────────────────
@@ -89,10 +85,6 @@ export default function useAppChromeEffects({
   useEffect(() => {
     clearTokenCache();
   }, [themeKey]);
-
-  useEffect(() => {
-    hasLoadedDiffRef.current = hasLoadedDiff;
-  }, [hasLoadedDiff, hasLoadedDiffRef]);
 
   useEffect(() => {
     workbookCompareModeRef.current = workbookCompareMode;

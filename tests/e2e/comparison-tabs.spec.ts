@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { DiffData, SvnRevisionInfo } from '../../src/types';
 import type { E2ELoadTextDiffPayload } from '../../src/utils/app/e2eBridge';
+import type { WorkbookArtifactDescriptor, WorkbookArtifactWindowRequest } from '../../shared/workbookArtifactProtocol';
 
 type ExternalComparisonHarness = {
   enqueue: (data: DiffData, delayMs?: number) => void;
@@ -16,10 +17,17 @@ type RevisionComparisonHarness = {
   blameSessions: Array<string | undefined>;
 };
 
+type WorkbookComparisonHarness = {
+  enqueue: (fileName: string, marker: string) => void;
+  requestedSessions: string[];
+  releasedSessions: Array<string | undefined>;
+};
+
 declare global {
   interface Window {
     __comparisonHarness?: ExternalComparisonHarness;
     __comparisonRevisionHarness?: RevisionComparisonHarness;
+    __comparisonWorkbookHarness?: WorkbookComparisonHarness;
   }
 }
 
@@ -315,6 +323,137 @@ test('workbook sheet selection survives visiting another comparison', async ({ p
   await expect(detailsSheet).toHaveAttribute('aria-current', 'page');
   await expect(page.getByTestId('toolbar-layout-split-h')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('formula-value-field')).toContainText('Before details');
+});
+
+test('consecutive native XLSM artifacts restore their loaded content across tabs and home', async ({ page }) => {
+  await page.addInitScript(() => {
+    const queue: DiffData[] = [];
+    const markers = new Map<string, string>();
+    const descriptors = new Map<string, WorkbookArtifactDescriptor>();
+    let listener: (() => void) | null = null;
+    const bridge = window.versora!;
+    window.__comparisonWorkbookHarness = {
+      requestedSessions: [], releasedSessions: [],
+      enqueue(fileName, marker) {
+        const comparisonSessionId = `native-${marker}`;
+        const artifactId = `artifact-${marker}`;
+        const metadata = { sheets: { Sheet1: { name: 'Sheet1', rowCount: 2, maxColumns: 1, hiddenColumns: [], mergeRanges: [] } } };
+        const descriptor: WorkbookArtifactDescriptor = {
+          version: 1, artifactId, comparisonSessionId, compareMode: 'strict',
+          sheets: [{
+            id: 0, sheetId: 0, name: 'Sheet1', hasBaseSide: true, hasMineSide: true,
+            pairStart: 0, pairCount: 2, maxColumnCount: 1, baseUsedColumns: [0], mineUsedColumns: [0],
+            baseRowCount: 2, mineRowCount: 2, baseCellCount: 2, mineCellCount: 2,
+            equalRows: 1, addedRows: 0, deletedRows: 0, modifiedRows: 1, changedCellCount: 1, changedColumns: [0],
+          }],
+          rows: {
+            sheetIds: new Uint32Array([0, 0]), baseOrdinals: new Uint32Array([0, 1]), mineOrdinals: new Uint32Array([0, 1]),
+            baseRowNumbers: new Uint32Array([1, 2]), mineRowNumbers: new Uint32Array([1, 2]),
+            kinds: new Uint8Array([0, 3]), toneMasks: new Uint8Array([0, 4]), searchBothSides: new Uint8Array([0, 0]),
+            changedCellCounts: new Uint32Array([0, 1]), baseColumnCounts: new Uint32Array([1, 1]), mineColumnCounts: new Uint32Array([1, 1]),
+            runOffsets: new Uint32Array([0, 0, 1]),
+          },
+          runs: { starts: new Uint32Array([0]), ends: new Uint32Array([1]), flags: new Uint32Array([27]), regionIds: new Uint32Array([0]) },
+          regions: {
+            sheetIds: new Uint32Array([0]), startRows: new Uint32Array([1]), endRows: new Uint32Array([2]),
+            startColumns: new Uint32Array([0]), endColumns: new Uint32Array([1]),
+            anchorRows: new Uint32Array([1]), anchorColumns: new Uint32Array([0]), changedCellCounts: new Float64Array([1]),
+          },
+          regionCount: 1, baseMetadata: metadata, mineMetadata: metadata,
+          stats: { equalRows: 1, addedRows: 0, deletedRows: 0, modifiedRows: 1, changedCells: 1 },
+          sourceCounts: { base: { rowCount: 2, cellCount: 2 }, mine: { rowCount: 2, cellCount: 2 } },
+          perf: { ingestMs: 0, alignmentMs: 0, totalMs: 0 },
+        };
+        markers.set(artifactId, marker);
+        descriptors.set(artifactId, descriptor);
+        queue.push({
+          comparisonSessionId, source: { kind: 'local', label: 'Local' }, sourceIdentity: fileName,
+          svnUrl: '', fileName, baseName: `${marker}.base.xlsm`, mineName: `${marker}.mine.xlsm`,
+          baseContent: '', mineContent: '',
+          compareContext: 'literal_two_file_compare', canSwitchRevisions: false, workbookArtifact: descriptor,
+        });
+        listener?.();
+      },
+    };
+    const readWindow = (request: WorkbookArtifactWindowRequest) => {
+      const marker = markers.get(request.artifactId)!;
+      const includesColumn = request.columnRanges.some(({ start, end }) => start <= 0 && end > 0);
+      return {
+        ...request,
+        rows: Array.from({ length: 2 }, (_, rowIndex) => ({
+          rowIndex, baseRowNumber: rowIndex + 1, mineRowNumber: rowIndex + 1,
+          baseCells: includesColumn ? [{ column: 0, value: rowIndex === 0 ? 'Header' : `Before ${marker}`, formula: '' }] : [],
+          mineCells: includesColumn ? [{ column: 0, value: rowIndex === 0 ? 'Header' : `After ${marker}`, formula: '' }] : [], changedColumnRuns: [],
+        })).slice(request.startRow, request.startRow + request.rowCount),
+        nextRow: null,
+      };
+    };
+    window.versora = {
+      ...bridge,
+      getLaunchContext: async () => ({
+        ...await bridge.getLaunchContext(), hasDiffRequest: queue.length > 0, pendingDiffRequestCount: queue.length,
+      }),
+      onCliArgsUpdated: (callback) => { listener = callback; return () => { listener = null; }; },
+      getDiffData: async () => {
+        const data = queue.shift();
+        if (!data) throw new Error('No queued native workbook comparison.');
+        window.__comparisonWorkbookHarness!.requestedSessions.push(data.comparisonSessionId!);
+        return data;
+      },
+      getWorkbookArtifactView: async ({ artifactId, compareMode }) => ({ ...descriptors.get(artifactId)!, compareMode }),
+      readWorkbookArtifactWindow: async (request) => readWindow(request),
+      readWorkbookArtifactCells: async (request) => ({
+        ...request,
+        cells: request.cells.map(({ rowNumber, column }) => ({
+          rowNumber, column, exists: rowNumber >= 1 && rowNumber <= 2 && column === 0, formula: '',
+          value: rowNumber === 1 ? 'Header' : `${request.side === 'base' ? 'Before' : 'After'} ${markers.get(request.artifactId)!}`,
+        })),
+      }),
+      releaseSessionResources: async (sessionId?: string) => {
+        window.__comparisonWorkbookHarness!.releasedSessions.push(sessionId);
+      },
+    } as NonNullable<typeof window.versora>;
+  });
+  await openApp(page);
+  const assertWorkbookContent = async (fileName: string, marker: string) => {
+    await expect(comparisonTab(page, fileName)).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(() => page.evaluate(() => window.__SVN_DIFF_E2E__!.getSnapshot())).toMatchObject({
+      hasLoadedDiff: true, isWorkbookMode: true, fileName,
+    });
+    await expect(page.locator('.home-stage')).toHaveCount(0);
+    await expect(page.getByTestId('diff-loading-state')).toHaveCount(0);
+    const canvas = page.locator('[data-testid="workbook-pane-canvas-base"]:not([data-workbook-header-row-canvas="true"])').first();
+    await expect(canvas).toBeVisible();
+    await canvas.click({ position: { x: 140, y: 12 } });
+    await expect(page.getByTestId('formula-address-field')).toHaveText('A2');
+    await expect(page.getByTestId('formula-value-field')).toContainText(`Before ${marker}`);
+  };
+  // Awaiting each loaded file reproduces the native batching path without rapid clicks.
+  for (const marker of ['Alpha', 'Beta']) {
+    await page.evaluate((name) => window.__comparisonWorkbookHarness!.enqueue(`${name}.xlsm`, name), marker);
+    await assertWorkbookContent(`${marker}.xlsm`, marker);
+  }
+  expect(await page.evaluate(() => window.__comparisonWorkbookHarness!.requestedSessions)).toEqual(['native-Alpha', 'native-Beta']);
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const marker of ['Alpha', 'Beta']) {
+      await selectComparison(page, `${marker}.xlsm`);
+      await assertWorkbookContent(`${marker}.xlsm`, marker);
+    }
+  }
+  for (const marker of ['Alpha', 'Beta']) {
+    await page.getByTestId('toolbar-home').click();
+    await expect(page.locator('.home-stage')).toBeVisible();
+    await selectComparison(page, `${marker}.xlsm`);
+    await assertWorkbookContent(`${marker}.xlsm`, marker);
+  }
+  expect(await page.evaluate(() => window.__comparisonWorkbookHarness!.releasedSessions)).toEqual([]);
+  await page.getByRole('button', { name: 'Close comparison: Beta.xlsm', exact: true }).click();
+  await expect(page.getByTestId('comparison-tab')).toHaveCount(1);
+  await assertWorkbookContent('Alpha.xlsm', 'Alpha');
+  await expect.poll(() => page.evaluate(() => window.__comparisonWorkbookHarness!.releasedSessions)).toEqual(['native-Beta']);
+  await page.getByRole('button', { name: 'Close comparison: Alpha.xlsm', exact: true }).click();
+  await expect(page.getByTestId('comparison-tab')).toHaveCount(0);
+  await expect(page.locator('.home-stage')).toBeVisible();
 });
 
 test('home and new comparison keep existing files; closing the last file returns home', async ({ page }) => {
